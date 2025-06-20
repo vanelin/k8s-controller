@@ -2,13 +2,18 @@
 
 A Go-based Kubernetes controller with structured logging and environment configuration using Viper.
 
+### Prerequisites
+
+- Go 1.24 or newer
+- Make
+- curl (for installing golangci-lint)
+
 ## Features
 
 - Load configuration from `.env` files
 - Support for system environment variables
 - Automatic environment variable detection
 - Type-safe configuration struct
-- Graceful fallback when `.env` file is not found
 - Structured logging with zerolog
 - Kubernetes configuration support
 
@@ -75,26 +80,84 @@ go build -o controller
 | `KUBECONFIG` | Path to Kubernetes configuration file | `~/.kube/config` | No |
 | `LOGGING_LEVEL` | Logging level (trace, debug, info, warn, error) | `info` | No |
 
+## Configuration System
+
+The application uses a **smart configuration system** that ensures it always has valid settings, even without any configuration files or environment variables.
+
+### Configuration Priority
+
+The system follows this priority order (highest to lowest):
+
+1. **CLI flags** - Override everything else
+2. **System environment variables** - Set via `export` or command line
+3. **`.env` file** - Local configuration file
+4. **Default values** - Built-in fallback values
+
+### Configuration Examples
+
+```bash
+# Zero-configuration (uses defaults)
+./controller
+
+# CLI flag override
+./controller --log-level debug
+
+# Environment variables
+export PORT=:9090 && export LOGGING_LEVEL=debug && ./controller
+
+# .env file
+echo "PORT=:7070" > pkg/common/envs/.env && ./controller
+
+# Mixed configuration
+export PORT=:9090 && ./controller --log-level trace
+```
+
+### Zero-Configuration Setup
+
+The application works out-of-the-box without any configuration:
+
+```bash
+# Just run it - all defaults will be used
+./controller
+
+# Output will show:
+# Configuration:
+#   PORT: :8080
+#   LOGGING_LEVEL: info
+#   KUBECONFIG: ~/.kube/config
+```
+
 ## Usage
 
 ### Basic Usage
 
 ```go
-import "github.com/vanelin/k8s-controller.git/pkg/common/config"
+package main
 
-// Load configuration
-config, err := config.LoadConfig(config.GetConfigPath())
-if err != nil {
-    log.Fatal(err)
+import (
+	"fmt"
+	"log"
+
+	"github.com/vanelin/k8s-controller.git/pkg/common/config"
+)
+
+func main() {
+	// Load configuration
+	cfg, err := config.LoadConfig(config.GetConfigPath())
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Use configuration
+	fmt.Printf("Port: %s\n", cfg.Port)
+	fmt.Printf("Log Level: %s\n", cfg.LoggingLevel)
+	fmt.Printf("Kubeconfig: %s\n", cfg.KUBECONFIG)
 }
-
-// Use configuration
-fmt.Printf("Server port: %s\n", config.Port)
-fmt.Printf("Logging level: %s\n", config.LoggingLevel)
-fmt.Printf("Kubeconfig path: %s\n", config.KUBECONFIG)
 ```
 
 ### Setting Environment Variables
+
+You can configure the application using different methods:
 
 #### 1. Using .env file
 
@@ -126,112 +189,34 @@ PORT=:8080 KUBECONFIG=~/.kube/config LOGGING_LEVEL=trace ./controller
 ./controller --log-level debug
 ```
 
-## Priority Order
-
-1. CLI flags (highest priority)
-2. System environment variables
-3. `.env` file values
-4. Default values (lowest priority)
-
 ## Makefile Commands
+
+### Quick Commands
+- `make run` - Build and run the application
+- `make run-debug` - Run with debug logging
+- `make run-trace` - Run with trace logging
+- `make dev` - Complete development workflow (check-env, deps, fmt, lint, test, build, run)
 
 ### Build Commands
 - `make build` - Build the application
 - `make build-linux` - Build for Linux (amd64, arm64)
 - `make build-darwin` - Build for macOS (amd64, arm64)
 - `make build-all` - Build for all platforms
+- `make prod` - Production build (clean, deps, test, build)
 
 ### Development Commands
-- `make run` - Build and run the application
-- `make run-debug` - Run with debug logging
-- `make run-trace` - Run with trace logging
-- `make run-env` - Run with custom environment variables
-- `make dev` - Complete development workflow
-
-### Utility Commands
 - `make clean` - Clean build artifacts
-- `make test` - Run tests
-- `make test-coverage` - Run tests with coverage report
 - `make deps` - Install dependencies
 - `make fmt` - Format code
 - `make lint` - Lint code
+- `make test` - Run tests
+- `make test-coverage` - Run tests with coverage report
+
+### Setup Commands
 - `make check-env` - Check/create .env file
 - `make install-lint` - Install golangci-lint
 - `make delete-lint` - Remove golangci-lint
-
-### Production Commands
-- `make prod` - Production build (clean, deps, test, build)
-
-## Integration with CLI
-
-The configuration is automatically loaded when running the CLI application. You can see the current configuration by running:
-
-```bash
-./controller
-```
-
-This will display the current configuration values including the KUBECONFIG path.
-
-### Logging Level Examples
-
-```bash
-# Use config default (info)
-./controller
-
-# Override with CLI flag
-./controller --log-level debug
-
-# Override with environment variable
-LOGGING_LEVEL=trace ./controller
-
-# Override with .env file
-echo "LOGGING_LEVEL=warn" >> pkg/common/envs/.env
-./controller
-```
-
-## Development Setup
-
-### Prerequisites
-
-- Go 1.21 or later
-- Make
-- curl (for installing golangci-lint)
-
-### Initial Setup
-
-```bash
-# Clone the repository
-git clone <repository-url>
-cd controller
-
-# Install dependencies
-make deps
-
-# Install linter
-make install-lint
-
-# Create default environment file
-make check-env
-
-# Run development workflow
-make dev
-```
-
-### Code Quality
-
-```bash
-# Format code
-make fmt
-
-# Lint code
-make lint
-
-# Run tests
-make test
-
-# Run tests with coverage
-make test-coverage
-```
+- `make help` - Show all available commands
 
 ## License
 
