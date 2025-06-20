@@ -1,37 +1,22 @@
-# **Add zerolog for structured logging:**
+# **Support log-level flags**
 
-   Integrate [zerolog](https://github.com/rs/zerolog) to enable structured logging with support for log levels: info, debug, trace, warn, and error.
-   
-   Install zerolog:
-   ```sh
-   go get github.com/rs/zerolog/log
-   ```
-   
-   Example usage in your code:
+   Example usage in your `main.go`:
    ```go
-   import (
-       "github.com/rs/zerolog/log"
-   )
 
-   func main() {
-       log.Info().Msg("info message")
-       log.Debug().Msg("debug message")
-       log.Trace().Msg("trace message")
-       log.Warn().Msg("warn message")
-       log.Error().Msg("error message")
+       rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "Set log level: trace, debug, info, warn, error")
+       rootCmd.Execute()
    }
    ```
-   
-   You can configure the log level and output format as needed. See the [zerolog documentation](https://github.com/rs/zerolog) for advanced configuration.
 
-3. **Build your CLI:**
+   Build your CLI:
    ```sh
    go build -o controller
    ```
 
-4. **Run your CLI (shows help by default):**
+   You can now run your CLI with different log levels:
    ```sh
-   ./controller --help
+   ./controller --log-level debug
+   ./controller --log-level trace
    ```
 
 ## Project Structure
