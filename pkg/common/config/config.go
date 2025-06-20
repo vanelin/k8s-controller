@@ -21,7 +21,18 @@ func LoadConfig(path string) (config Config, err error) {
 	viper.SetConfigName(".env")
 	viper.SetConfigType("env")
 
-	// Read environment variables
+	// Bind environment variables to config fields
+	if err := viper.BindEnv("PORT"); err != nil {
+		return config, fmt.Errorf("failed to bind PORT env var: %w", err)
+	}
+	if err := viper.BindEnv("KUBECONFIG"); err != nil {
+		return config, fmt.Errorf("failed to bind KUBECONFIG env var: %w", err)
+	}
+	if err := viper.BindEnv("LOGGING_LEVEL"); err != nil {
+		return config, fmt.Errorf("failed to bind LOGGING_LEVEL env var: %w", err)
+	}
+
+	// Enable automatic environment variable reading
 	viper.AutomaticEnv()
 
 	// Read .env file if it exists
@@ -37,7 +48,23 @@ func LoadConfig(path string) (config Config, err error) {
 		return config, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
+	// Set default values for empty fields
+	config.setDefaults()
+
 	return config, nil
+}
+
+// setDefaults sets default values for empty configuration fields
+func (c *Config) setDefaults() {
+	if c.Port == "" {
+		c.Port = ":8080"
+	}
+	if c.KUBECONFIG == "" {
+		c.KUBECONFIG = "~/.kube/config"
+	}
+	if c.LoggingLevel == "" {
+		c.LoggingLevel = "info"
+	}
 }
 
 // GetConfigPath returns the path to the config directory

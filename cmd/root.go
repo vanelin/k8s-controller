@@ -118,6 +118,9 @@ to quickly create a Cobra application.`,
 		fmt.Printf("Current log level: %s\n", getLogLevel())
 		fmt.Println()
 
+		// Update config with actual log level for display
+		appConfig.LoggingLevel = getLogLevel()
+
 		// Print configuration
 		appConfig.PrintConfig()
 		fmt.Println()
