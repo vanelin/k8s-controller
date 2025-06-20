@@ -89,7 +89,7 @@ run-trace: build
 # Run with custom environment variables
 run-env: build
 	@echo "Running $(BINARY_NAME) with custom environment..."
-	PORT=:8080 LOGGING_LEVEL=debug ./$(BINARY_NAME)
+	PORT=:8081 LOGGING_LEVEL=debug ./$(BINARY_NAME)
 
 # Check if .env file exists
 check-env:
