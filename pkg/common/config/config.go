@@ -1,0 +1,72 @@
+package config
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/spf13/viper"
+)
+
+// Config holds all configuration for the application
+type Config struct {
+	Port         string `mapstructure:"PORT"`
+	KUBECONFIG   string `mapstructure:"KUBECONFIG"`
+	LoggingLevel string `mapstructure:"LOGGING_LEVEL"`
+}
+
+// LoadConfig reads configuration from file or environment variables
+func LoadConfig(path string) (config Config, err error) {
+	viper.AddConfigPath(path)
+	viper.SetConfigName(".env")
+	viper.SetConfigType("env")
+
+	// Read environment variables
+	viper.AutomaticEnv()
+
+	// Read .env file if it exists
+	if err := viper.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+			return config, fmt.Errorf("failed to read config file: %w", err)
+		}
+		// Config file not found, continue with environment variables only
+	}
+
+	// Unmarshal config into struct
+	if err := viper.Unmarshal(&config); err != nil {
+		return config, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	return config, nil
+}
+
+// GetConfigPath returns the path to the config directory
+func GetConfigPath() string {
+	// Try to get the current working directory
+	wd, err := os.Getwd()
+	if err != nil {
+		// Fallback to relative path
+		return "pkg/common/envs"
+	}
+
+	// Look for config in the project structure
+	configPath := filepath.Join(wd, "pkg", "common", "envs")
+	if _, err := os.Stat(configPath); err == nil {
+		return configPath
+	}
+
+	// If not found, return relative path
+	return "pkg/common/envs"
+}
+
+// PrintConfig prints the current configuration (without sensitive data)
+func (c *Config) PrintConfig() {
+	fmt.Printf("Configuration:\n")
+	fmt.Printf("  PORT: %s\n", c.Port)
+	fmt.Printf("  LOGGING_LEVEL: %s\n", c.LoggingLevel)
+	if c.KUBECONFIG != "" {
+		fmt.Printf("  KUBECONFIG: %s\n", c.KUBECONFIG)
+	} else {
+		fmt.Printf("  KUBECONFIG: [NOT SET]\n")
+	}
+}

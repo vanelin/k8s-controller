@@ -8,10 +8,12 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
+	"github.com/vanelin/k8s-controller.git/pkg/common/config"
 )
 
 var (
-	logLevel string
+	logLevel  string
+	appConfig config.Config
 )
 
 // parseLogLevel converts string log level to zerolog.Level
@@ -36,7 +38,8 @@ func parseLogLevel(level string) zerolog.Level {
 func configureLogger(level zerolog.Level) {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 
-	if level == zerolog.TraceLevel {
+	switch level {
+	case zerolog.TraceLevel:
 		zerolog.CallerFieldName = "caller"
 		log.Logger = log.Output(zerolog.ConsoleWriter{
 			Out:        os.Stderr,
@@ -48,7 +51,7 @@ func configureLogger(level zerolog.Level) {
 				zerolog.MessageFieldName,
 			},
 		}).With().Caller().Logger()
-	} else if level == zerolog.DebugLevel {
+	case zerolog.DebugLevel:
 		log.Logger = log.Output(zerolog.ConsoleWriter{
 			Out:        os.Stderr,
 			TimeFormat: "2006-01-02 15:04:05",
@@ -58,11 +61,36 @@ func configureLogger(level zerolog.Level) {
 				zerolog.MessageFieldName,
 			},
 		})
-	} else {
+	default:
 		log.Logger = log.Output(os.Stderr)
 	}
 
 	zerolog.SetGlobalLevel(level)
+}
+
+// loadConfiguration loads environment variables using Viper
+func loadConfiguration() error {
+	configPath := config.GetConfigPath()
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to load configuration: %w", err)
+	}
+	appConfig = cfg
+	return nil
+}
+
+// getLogLevel returns the log level from config or CLI flag
+func getLogLevel() string {
+	// If CLI flag is set, it takes precedence
+	if logLevel != "" {
+		return logLevel
+	}
+	// Otherwise use config value
+	if appConfig.LoggingLevel != "" {
+		return appConfig.LoggingLevel
+	}
+	// Default fallback
+	return "info"
 }
 
 // rootCmd represents the base command when called without any subcommands
@@ -76,12 +104,22 @@ Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		level := parseLogLevel(logLevel)
+		// Load configuration first
+		if err := loadConfiguration(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to load configuration: %v\n", err)
+		}
+
+		// Configure logging with resolved log level
+		level := parseLogLevel(getLogLevel())
 		configureLogger(level)
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("=== k8s-controller CLI ===")
-		fmt.Printf("Current log level: %s\n", logLevel)
+		fmt.Printf("Current log level: %s\n", getLogLevel())
+		fmt.Println()
+
+		// Print configuration
+		appConfig.PrintConfig()
 		fmt.Println()
 
 		// Example logging statements
@@ -98,7 +136,7 @@ to quickly create a Cobra application.`,
 
 func init() {
 	// Add log-level flag
-	rootCmd.PersistentFlags().StringVarP(&logLevel, "log-level", "l", "info", "Set the logging level (trace, debug, info, warn, error)")
+	rootCmd.PersistentFlags().StringVarP(&logLevel, "log-level", "l", "", "Set the logging level (trace, debug, info, warn, error). Overrides LOGGING_LEVEL from config.")
 }
 
 func Execute() {
