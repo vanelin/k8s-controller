@@ -31,5 +31,8 @@ go.work.sum
 # .idea/
 # .vscode/
 
-# Eclude cursor rules
+# Ignore cursor rules
 .cursor/
+
+# Ignore kubebuilder
+kubebuilder/
