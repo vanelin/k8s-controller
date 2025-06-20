@@ -26,8 +26,7 @@ controller/
 ├── pkg/
 │   └── common/
 │       ├── config/
-│       │   ├── config.go
-│       │   └── example.go
+│       │   └── config.go
 │       └── envs/
 │           └── .env
 ├── main.go
