@@ -139,7 +139,7 @@ to quickly create a Cobra application.`,
 
 func init() {
 	// Add log-level flag
-	rootCmd.PersistentFlags().StringVarP(&logLevel, "log-level", "l", "", "Set the logging level (trace, debug, info, warn, error). Overrides LOGGING_LEVEL from config.")
+	rootCmd.PersistentFlags().StringVarP(&logLevel, "log-level", "l", "", "Set the logging level (trace, debug, info, warn, error). Overrides LOGGING_LEVEL from config (default: info)")
 }
 
 func Execute() {

@@ -57,7 +57,7 @@ func LoadConfig(path string) (config Config, err error) {
 // setDefaults sets default values for empty configuration fields
 func (c *Config) setDefaults() {
 	if c.Port == "" {
-		c.Port = ":8080"
+		c.Port = "8080"
 	}
 	if c.KUBECONFIG == "" {
 		c.KUBECONFIG = "~/.kube/config"
