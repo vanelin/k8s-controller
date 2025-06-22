@@ -27,16 +27,16 @@ A Go-based Kubernetes controller with structured logging, environment configurat
 ```
 k8s-controller/
 ├── cmd/
-│   ├── root.go          	# Main CLI application
-│   └── server.go        	# FastHTTP server command
+│   ├── root.go          # Main CLI application
+│   └── server.go        # FastHTTP server command
 ├── pkg/
 │   └── common/
-│       ├── config/		 	# Configuration management
+│       ├── config/      # Configuration management
 │       │   └── config.go
-│       └── envs/		 	# Environment files
+│       └── envs/        # Environment files
 │           └── .env
-├── main.go              	# Application entry point
-├── Makefile             	# Development and build commands
+├── main.go              # Application entry point
+├── Makefile             # Development and build commands
 └── README.md
 ```
 
