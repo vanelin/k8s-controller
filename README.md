@@ -1,36 +1,40 @@
 # Kubernetes Controller
 
-A Go-based Kubernetes controller with structured logging and environment configuration using Viper.
+![Visitor](https://visitor-badge.laobi.icu/badge?page_id=vanelin.k8s-controller)
+[![Go Reference](https://pkg.go.dev/badge/github.com/vanelin/k8s-controller.svg?style=flat-square)](https://pkg.go.dev/github.com/vanelin/k8s-controller)
+[![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/vanelin/k8s-controller/go.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=test-n-build)](https://github.com/vanelin/k8s-controller/actions/workflows/go.yml)
+![Repo size](https://img.shields.io/github/repo-size/vanelin/k8s-controller?style=flat-square)
+[![Updates](https://img.shields.io/github/last-commit/vanelin/k8s-controller.svg?style=flat-square&logo=git&logoColor=white&color=blue)](https://github.com/vanelin/k8s-controller/commits/main/)
 
-### Prerequisites
+A Go-based Kubernetes controller with structured logging, environment configuration using Viper, and a FastHTTP server.
+
+## Features
+
+- **FastHTTP Server** - High-performance HTTP server with configurable port and logging
+- **Smart Configuration** - Load from `.env` files, environment variables, or CLI flags
+- **Structured Logging** - Zero-config logging with zerolog
+- **Kubernetes Integration** - Built-in Kubernetes configuration support
+- **Development Tools** - Comprehensive Makefile with development workflows
+
+## Prerequisites
 
 - Go 1.24 or newer
 - Make
 - curl (for installing golangci-lint)
 
-## Features
-
-- Load configuration from `.env` files
-- Support for system environment variables
-- Automatic environment variable detection
-- Type-safe configuration struct
-- Structured logging with zerolog
-- Kubernetes configuration support
-
 ## Project Structure
 
 ```
-controller/
+k8s-controller/
 ├── cmd/
-│   └── root.go
+│   ├── root.go          # Main CLI application
+│   └── server.go        # FastHTTP server command
 ├── pkg/
 │   └── common/
-│       ├── config/
-│       │   └── config.go
-│       └── envs/
-│           └── .env
-├── main.go
-├── Makefile
+│       ├── config/      # Configuration management
+│       └── envs/        # Environment files
+├── main.go              # Application entry point
+├── Makefile             # Development and build commands
 └── README.md
 ```
 
@@ -42,20 +46,17 @@ controller/
 # Show all available commands
 make help
 
-# Build and run the application
-make run
+# Start FastHTTP server (most common use case)
+make server
 
-# Run with debug logging
-make run-debug
+# Start server with debug logging
+make server-debug
 
-# Run with trace logging
-make run-trace
-
-# Run with custom environment
-make run-env
+# Start server with custom port (interactive)
+make server-port
 
 # Development workflow
-make dev
+make dev-server
 
 # Production build
 make prod
@@ -65,158 +66,150 @@ make prod
 
 ```bash
 # Build the application
-go build -o controller
+go build -o k8s-controller
 
-# Run the application
-./controller
+# Start FastHTTP server
+./k8s-controller server
+
+# Start server with custom port and log level
+./k8s-controller server --port 9090 --log-level debug
+
+# Using short flags
+./k8s-controller server -p 8080 -l debug
 ```
 
-## Configuration Variables
+## FastHTTP Server
 
-| Variable | Description | Default | Required |
-|----------|-------------|---------|----------|
-| `PORT` | Server port | `:8080` | No |
-| `KUBECONFIG` | Path to Kubernetes configuration file | `~/.kube/config` | No |
-| `LOGGING_LEVEL` | Logging level (trace, debug, info, warn, error) | `info` | No |
+The main feature of this application is a high-performance FastHTTP server that can be configured through multiple methods.
 
-## Configuration System
+### Basic Usage
 
-The application uses a **smart configuration system** that ensures it always has valid settings, even without any configuration files or environment variables.
+```bash
+# Development mode
+go run main.go server
+
+# Production mode
+./k8s-controller server
+
+# With custom configuration
+./k8s-controller server --port 9090 --log-level debug
+```
+
+### What it does
+
+- Starts a FastHTTP server on the specified port (default: 8080)
+- Responds with "Hello from FastHTTP!" to any HTTP request
+- Uses structured logging with configurable levels
+- Supports hot-reload configuration via environment variables
 
 ### Configuration Priority
 
-The system follows this priority order (highest to lowest):
+1. **CLI flags** (`--port`, `--log-level`) - highest priority
+2. **Environment variables** (`PORT`, `LOGGING_LEVEL`)
+3. **`.env` file** values
+4. **Default values** (PORT=8080, LOGGING_LEVEL=info)
 
-1. **CLI flags** - Override everything else
-2. **System environment variables** - Set via `export` or command line
-3. **`.env` file** - Local configuration file
-4. **Default values** - Built-in fallback values
+## Configuration
+
+### Configuration Variables
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `PORT` | Server port | `8080` | No |
+| `KUBECONFIG` | Path to Kubernetes configuration file | `~/.kube/config` | No |
+| `LOGGING_LEVEL` | Logging level (trace, debug, info, warn, error) | `info` | No |
 
 ### Configuration Examples
 
 ```bash
 # Zero-configuration (uses defaults)
-./controller
+./k8s-controller server
 
 # CLI flag override
-./controller --log-level debug
+./k8s-controller server --port 9090 --log-level debug
 
 # Environment variables
-export PORT=:9090 && export LOGGING_LEVEL=debug && ./controller
+export PORT=9090 && export LOGGING_LEVEL=debug && ./k8s-controller server
 
 # .env file
-echo "PORT=:7070" > pkg/common/envs/.env && ./controller
+cat <<EOF > pkg/common/envs/.env
+PORT=7070
+LOGGING_LEVEL=debug
+EOF
+./k8s-controller server
 
 # Mixed configuration
-export PORT=:9090 && ./controller --log-level trace
+export PORT=9090 && ./k8s-controller server --log-level trace
 ```
 
-### Zero-Configuration Setup
+## Development
 
-The application works out-of-the-box without any configuration:
+### Development Mode
 
 ```bash
-# Just run it - all defaults will be used
-./controller
+# Run server directly
+go run main.go server
 
-# Output will show:
-# Configuration:
-#   PORT: :8080
-#   LOGGING_LEVEL: info
-#   KUBECONFIG: ~/.kube/config
+# With custom settings
+go run main.go server --port 8080 --log-level debug
 ```
 
-## Usage
-
-### Basic Usage
-
-```go
-package main
-
-import (
-	"fmt"
-	"log"
-
-	"github.com/vanelin/k8s-controller.git/pkg/common/config"
-)
-
-func main() {
-	// Load configuration
-	cfg, err := config.LoadConfig(config.GetConfigPath())
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Use configuration
-	fmt.Printf("Port: %s\n", cfg.Port)
-	fmt.Printf("Log Level: %s\n", cfg.LoggingLevel)
-	fmt.Printf("Kubeconfig: %s\n", cfg.KUBECONFIG)
-}
-```
-
-### Setting Environment Variables
-
-You can configure the application using different methods:
-
-#### 1. Using .env file
-
-Create a `.env` file in `pkg/common/envs/`:
-
-```env
-PORT=:8080
-KUBECONFIG=~/.kube/config
-LOGGING_LEVEL=debug
-```
-
-#### 2. Using system environment variables
+### Testing
 
 ```bash
-export PORT=:8080
-export KUBECONFIG=~/.kube/config
-export LOGGING_LEVEL=debug
-```
+# Run tests
+make test
 
-#### 3. Using command line
+# Run tests with coverage
+make test-coverage
 
-```bash
-PORT=:8080 KUBECONFIG=~/.kube/config LOGGING_LEVEL=trace ./controller
-```
-
-#### 4. Using CLI flag (overrides config)
-
-```bash
-./controller --log-level debug
+# Full development workflow
+make dev-server
 ```
 
 ## Makefile Commands
 
-### Quick Commands
-- `make run` - Build and run the application
-- `make run-debug` - Run with debug logging
-- `make run-trace` - Run with trace logging
-- `make dev` - Complete development workflow (check-env, deps, fmt, lint, test, build, run)
+### Server Commands
+- `make server` - Build and start FastHTTP server
+- `make server-debug` - Start server with debug logging
+- `make server-trace` - Start server with trace logging
+- `make server-port` - Start server on custom port (interactive)
+- `make server-env` - Start server with custom environment (interactive)
+
+### Development Commands
+- `make dev` - Complete development workflow
+- `make dev-server` - Server development workflow
+- `make test` - Run tests
+- `make test-coverage` - Run tests with coverage
+- `make format` - Format code
+- `make lint` - Lint code
 
 ### Build Commands
 - `make build` - Build the application
 - `make build-linux` - Build for Linux (amd64, arm64)
 - `make build-darwin` - Build for macOS (amd64, arm64)
 - `make build-all` - Build for all platforms
-- `make prod` - Production build (clean, deps, test, build)
+- `make prod` - Production build
 
-### Development Commands
-- `make clean` - Clean build artifacts
-- `make deps` - Install dependencies
-- `make fmt` - Format code
-- `make lint` - Lint code
-- `make test` - Run tests
-- `make test-coverage` - Run tests with coverage report
+### Cross-compilation Examples
+```bash
+make build TARGETOS=linux TARGETOSARCH=arm64
+make build TARGETOS=darwin TARGETOSARCH=arm64
+```
 
-### Setup Commands
-- `make check-env` - Check/create .env file
-- `make install-lint` - Install golangci-lint
-- `make delete-lint` - Remove golangci-lint
-- `make help` - Show all available commands
+## Getting Help
+
+```bash
+# General help
+./k8s-controller --help
+
+# Server command help
+./k8s-controller server --help
+
+# Makefile help
+make help
+```
 
 ## License
 
-MIT License. See [LICENSE](LICENSE) for details. 
+MIT License. See [LICENSE](LICENSE) for details.
