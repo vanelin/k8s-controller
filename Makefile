@@ -24,9 +24,9 @@ GOMOD=$(GOCMD) mod
 GOFMT=$(GOCMD) fmt
 
 # Build flags
-LDFLAGS=-ldflags "-X main.Version=$(VERSION) -X main.BuildTime=$(shell date -u '+%Y-%m-%d_%H:%M:%S')"
+BUILD_FLAGS = -v -o $(APP) -ldflags "-X github.com/vanelin/$(APP).git/cmd.appVersion=$(VERSION) -X github.com/vanelin/$(APP).git/cmd.buildTime=$(shell date -u '+%Y-%m-%d_%H:%M:%S')"
 
-.PHONY: all clean test run help server server-debug server-trace format get build build-linux build-darwin build-all
+.PHONY: all clean test run help server server-debug server-trace format get build build-linux docker-build docker-run docker-clean clean-all
 
 # Default target
 all: clean build
@@ -45,7 +45,7 @@ get:
 # Build the application
 build: format get
 	@echo "Building $(BINARY_NAME) for $(TARGETOS)/$(TARGETOSARCH)..."
-	CGO_ENABLED=0 GOOS=$(TARGETOS) GOARCH=$(TARGETOSARCH) $(GOBUILD) $(LDFLAGS) -o $(BINARY_NAME) $(MAIN_PATH)
+	CGO_ENABLED=0 GOOS=$(TARGETOS) GOARCH=$(TARGETOSARCH) $(GOBUILD) $(BUILD_FLAGS) $(MAIN_PATH)
 	@echo "Build completed: $(BINARY_NAME)"
 
 # Build for different platforms
@@ -57,18 +57,6 @@ build-linux:
 	$(MAKE) build TARGETOS=linux TARGETOSARCH=arm64
 	mv $(BINARY_NAME) $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64
 
-build-darwin:
-	@echo "Building for macOS..."
-	mkdir -p $(BUILD_DIR)
-	$(MAKE) build TARGETOS=darwin TARGETOSARCH=amd64
-	mv $(BINARY_NAME) $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64
-	$(MAKE) build TARGETOS=darwin TARGETOSARCH=arm64
-	mv $(BINARY_NAME) $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64
-
-# Build for all platforms
-build-all: build-linux build-darwin
-	@echo "Build for all platforms completed"
-
 # Clean build artifacts
 clean:
 	@echo "Cleaning..."
@@ -77,6 +65,15 @@ clean:
 	rm -f coverage.html coverage.out
 	rm -rf $(BUILD_DIR)
 	@echo "Clean completed"
+
+# Clean Docker images
+docker-clean:
+	@echo "Cleaning Docker images..."
+	@docker images $(REGISTRY)/$(APP) --format "table {{.Repository}}:{{.Tag}}" | grep -v "REPOSITORY:TAG" | xargs -r docker rmi || echo "No Docker images found to remove"
+
+# Clean everything (build artifacts + Docker images)
+clean-all: clean docker-clean
+	@echo "All clean completed"
 
 # Run tests
 test:
@@ -178,6 +175,34 @@ dev-server: check-env get format lint test server
 # Production build
 prod: clean get test build
 
+# Docker build
+docker-build:
+	@echo "Building Docker image for $(TARGETOS)/$(TARGETOSARCH)..."
+	docker buildx build \
+		--platform $(TARGETOS)/$(TARGETOSARCH) \
+		--build-arg VERSION=$(VERSION) \
+		--build-arg TARGETOS=$(TARGETOS) \
+		--build-arg TARGETOSARCH=$(TARGETOSARCH) \
+		--build-arg SERVER_PORT=$(SERVER_PORT) \
+		--build-arg LOGGING_LEVEL=$(LOGGING_LEVEL) \
+		--load \
+		-t $(REGISTRY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETOSARCH) \
+		-t $(REGISTRY)/$(APP):latest-$(TARGETOS)-$(TARGETOSARCH) \
+		.
+	@echo "Docker image built: $(REGISTRY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETOSARCH)"
+
+# Docker run
+docker-run: docker-build
+	@echo "Running Docker container interactively (external:internal ports)..."
+	@echo -n "Enter FastHTTP server port (default: $(SERVER_PORT)): "; read int_port; \
+	echo -n "Enter external port (host port, default: $(SERVER_PORT)): "; read ext_port; \
+	echo -n "Enter log level (debug/info/warn/error/trace, default: $(LOGGING_LEVEL)): "; read loglevel; \
+	echo "Starting container with external port: $${ext_port:-$(SERVER_PORT)}, internal port: $${int_port:-$(SERVER_PORT)}, LOGGING_LEVEL: $${loglevel:-$(LOGGING_LEVEL)}..."; \
+	docker run --rm -p $${ext_port:-$(SERVER_PORT)}:$${int_port:-$(SERVER_PORT)} \
+		-e PORT=$${int_port:-$(SERVER_PORT)} \
+		-e LOGGING_LEVEL=$${loglevel:-$(LOGGING_LEVEL)} \
+		$(REGISTRY)/$(APP):latest-$(TARGETOS)-$(TARGETOSARCH) server
+
 # Show help
 help:
 	@echo "Available commands:"
@@ -185,13 +210,10 @@ help:
 	@echo "Build commands:"
 	@echo "  build          - Build the application (use TARGETOS/TARGETOSARCH for cross-compilation)"
 	@echo "  build-linux    - Build for Linux (amd64, arm64)"
-	@echo "  build-darwin   - Build for macOS (amd64, arm64)"
-	@echo "  build-all      - Build for all platforms"
 	@echo "  clean          - Clean build artifacts"
 	@echo ""
-	@echo "Cross-compilation examples:"
+	@echo "Cross-compilation example:"
 	@echo "  make build TARGETOS=linux TARGETOSARCH=arm64"
-	@echo "  make build TARGETOS=darwin TARGETOSARCH=arm64"
 	@echo ""
 	@echo "Test commands:"
 	@echo "  test           - Run tests"
@@ -221,6 +243,12 @@ help:
 	@echo "  dev            - Development workflow (check-env, get, format, lint, test, build, run)"
 	@echo "  dev-server     - Server development workflow (check-env, get, format, lint, test, server)"
 	@echo "  prod           - Production build (clean, get, test, build)"
+	@echo ""
+	@echo "Docker commands:"
+	@echo "  docker-build   - Build Docker image"
+	@echo "  docker-run     - Build and run Docker container interactively (external:internal ports)"
+	@echo "  docker-clean   - Clean Docker images"
+	@echo "  clean-all      - Clean build artifacts and Docker images"
 	@echo ""
 	@echo "Help:"
 	@echo "  help           - Show this help message" 

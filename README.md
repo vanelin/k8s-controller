@@ -189,14 +189,12 @@ make dev-server
 ### Build Commands
 - `make build` - Build the application
 - `make build-linux` - Build for Linux (amd64, arm64)
-- `make build-darwin` - Build for macOS (amd64, arm64)
-- `make build-all` - Build for all platforms
 - `make prod` - Production build
 
 ### Cross-compilation Examples
 ```bash
 make build TARGETOS=linux TARGETOSARCH=arm64
-make build TARGETOS=darwin TARGETOSARCH=arm64
+make build TARGETOS=linux TARGETOSARCH=amd64
 ```
 
 ## Getting Help

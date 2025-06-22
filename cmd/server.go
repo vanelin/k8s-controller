@@ -40,7 +40,7 @@ var serverCmd = &cobra.Command{
 				log.Error().Err(err).Msg("Failed to write response")
 			}
 		}
-		log.Info().Msgf("Starting FastHTTP server on %s", port)
+		log.Info().Msgf("Starting FastHTTP server on %s (version: %s, build time: %s)", port, appVersion, buildTime)
 		if err := fasthttp.ListenAndServe(port, handler); err != nil {
 			log.Error().Err(err).Msg("Error starting FastHTTP server")
 			os.Exit(1)
