@@ -24,13 +24,16 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  REPOSITORY: ${{ github.repository }}
+  REPOSITORY: ${{ github.repository_owner }}
   APP: k8s-controller
 
 jobs:
   ci:
     name: CI
     runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
     strategy:
       matrix:
         include:
