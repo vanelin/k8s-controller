@@ -69,14 +69,17 @@ jobs:
       - name: Run tests
         run: make test
 
-      - name: Build binaries for Linux
-        run: make build-linux VERSION=${{ steps.vars.outputs.version }}
+      - name: Build binary
+        run: |
+          mkdir -p build
+          make build TARGETOS=${{ matrix.os }} TARGETOSARCH=${{ matrix.arch }} VERSION=${{ steps.vars.outputs.version }}
+          mv k8s-controller build/k8s-controller-${{ matrix.os }}-${{ matrix.arch }}
 
-      - name: Upload binary artifacts
+      - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: binaries
-          path: build/
+          name: k8s-controller-binary-${{ matrix.os }}-${{ matrix.arch }}
+          path: build/k8s-controller-${{ matrix.os }}-${{ matrix.arch }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -110,7 +113,7 @@ jobs:
       - name: Upload Helm chart artifact
         uses: actions/upload-artifact@v4
         with:
-          name: helm-chart
+          name: k8s-controller-helm-chart-${{ matrix.os }}-${{ matrix.arch }}
           path: chart-artifacts/
 
   cd:
