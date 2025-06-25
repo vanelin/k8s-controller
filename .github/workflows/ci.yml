@@ -28,11 +28,10 @@ env:
   APP: k8s-controller
 
 jobs:
-  ci:
-    name: CI
+  build-binaries:
+    name: Build Binaries
     runs-on: ubuntu-latest
     permissions:
-      packages: write
       contents: read
     strategy:
       matrix:
@@ -89,12 +88,13 @@ jobs:
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: k8s-controller-binary-${{ matrix.os }}-${{ matrix.arch }}
+          name: k8s-controller-${{ matrix.os }}-${{ matrix.arch }}
           path: k8s-controller
 
   docker-build:
     name: Build and Push Multi-Arch Docker Image
     runs-on: ubuntu-latest
+    needs: build-binaries
     permissions:
       packages: write
     steps:
@@ -141,14 +141,22 @@ jobs:
         run: |
           make docker-build-multi VERSION=${{ steps.vars.outputs.version }} REPOSITORY=${{ env.REPOSITORY }}
 
-      - name: Trivy Scan
+      - name: Trivy Scan Docker Image
         uses: aquasecurity/trivy-action@0.28.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.REPOSITORY }}/${{ env.APP }}:${{ steps.vars.outputs.docker_tag }}
+          format: 'sarif'
+          output: 'trivy-image-results.sarif'
+
+      - name: Upload Trivy Docker scan results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-image-results.sarif'
 
   helm-package:
     name: Package Helm Chart
     runs-on: ubuntu-latest
+    needs: docker-build
     permissions:
       contents: read
     steps:
@@ -172,7 +180,7 @@ jobs:
           else
             # For commits, use latest tag + short SHA
             VERSION="${LATEST_TAG}-${SHORT_SHA}"
-            APP_VERSION=${SHORT_SHA}
+            APP_VERSION=${LATEST_TAG}-${SHORT_SHA}
             DOCKER_TAG="${LATEST_TAG}-${SHORT_SHA}"
           fi
           
@@ -180,6 +188,14 @@ jobs:
           echo "app_version=$APP_VERSION" >> $GITHUB_OUTPUT
           echo "docker_tag=$DOCKER_TAG" >> $GITHUB_OUTPUT
           echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+
+      - name: Update values.yaml
+        uses: mikefarah/yq@master
+        with:
+          cmd: |
+            yq -i '.image.tag=strenv(DOCKER_TAG)' charts/app/values.yaml
+        env:
+          DOCKER_TAG: ${{ steps.vars.outputs.docker_tag }}
 
       - name: Package Helm chart
         run: |
