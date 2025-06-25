@@ -149,6 +149,11 @@ jobs:
           format: 'sarif'
           output: 'trivy-image-results.sarif'
 
+      - name: Show Trivy scan summary
+        run: |
+          COUNT=$(cat trivy-image-results.sarif | jq '.runs[0].results | length')
+          echo "Trivy found $COUNT vulnerabilities/issues"
+
       - name: Upload Trivy Docker scan results
         uses: github/codeql-action/upload-sarif@v3
         with:
