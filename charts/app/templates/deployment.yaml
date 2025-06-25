@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "app.fullname" . }}
+  labels:
+    app: {{ include "app.name" . }}
+spec:
+  replicas: {{ .Values.deployment.replicas }}
+  selector:
+    matchLabels:
+      app: {{ include "app.name" . }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "app.name" . }}
+    spec:
+      containers:
+        - name: {{ include "app.name" . }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.app.port }}
+              name: http
+              protocol: TCP
+          env:
+            - name: PORT
+              value: "{{ .Values.app.port }}"
+            - name: KUBECONFIG
+              value: "{{ .Values.env.KUBECONFIG }}"
+            - name: LOGGING_LEVEL
+              value: "{{ .Values.app.logLevel }}"
+          resources:
+            {{- toYaml .Values.deployment.resources | nindent 12 }}
