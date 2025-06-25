@@ -1,53 +1,49 @@
-# k8s-controller Helm Chart
+# K8s Controller Helm Chart
 
-This Helm chart deploys the Kubernetes Controller application with FastHTTP server support.
+A Helm chart for deploying the Kubernetes Controller application with multi-architecture support.
 
-## Features
+## Prerequisites
 
-- **FastHTTP Server** - High-performance HTTP server with configurable port and logging
-- **Structured Logging** - Zero-config logging with zerolog
-- **Kubernetes Integration** - Built-in Kubernetes configuration support
-- **Configurable Resources** - Adjustable CPU and memory limits/requests
+- Kubernetes 1.30+
+- Helm 3.0+
 
-## Usage
+## Installation
 
 ### Basic Installation
 
 ```bash
-# Install with default values
 helm install k8s-controller ./charts/app
 ```
 
-### Custom Configuration
+### Installation with Custom Values
 
 ```bash
-# Override application settings (affects both app config and env vars)
 helm install k8s-controller ./charts/app \
+  --set image.tag="v1.0.0-abc123" \
   --set app.port=9090 \
-  --set app.logLevel=debug \
   --set deployment.replicas=3
-
-# Override KUBECONFIG path
-helm install k8s-controller ./charts/app \
-  --set env.KUBECONFIG=/custom/path/kubeconfig
-
-# Override resource limits
-helm install k8s-controller ./charts/app \
-  --set deployment.resources.limits.cpu=1000m \
-  --set deployment.resources.limits.memory=1Gi
 ```
 
-### Upgrade Existing Deployment
+## Multi-Architecture Support
+
+This chart supports multi-architecture deployments. The Docker images are built for both `amd64` and `arm64` architectures using Docker manifests.
+
+### Automatic Architecture Selection
+
+By default, Kubernetes will automatically select the appropriate image for each node's architecture. The chart uses a single image tag that contains both architectures.
+
+### Manual Architecture Selection
+
+If you need to deploy to specific architectures, you can use node selectors:
 
 ```bash
-# Upgrade to new version
-helm upgrade --install k8s-controller ./charts/app \
-  --set image.tag=v1.1.0
+# Deploy only to AMD64 nodes
+helm install k8s-controller ./charts/app \
+  --set nodeSelector."kubernetes\.io/arch"=amd64
 
-# Upgrade with new configuration
-helm upgrade --install k8s-controller ./charts/app \
-  --set app.logLevel=info \
-  --set deployment.replicas=2
+# Deploy only to ARM64 nodes  
+helm install k8s-controller ./charts/app \
+  --set nodeSelector."kubernetes\.io/arch"=arm64
 ```
 
 ## Configuration
@@ -57,10 +53,12 @@ helm upgrade --install k8s-controller ./charts/app \
 | `image.repository` | Docker image repository | `ghcr.io/vanelin/k8s-controller` |
 | `image.tag` | Docker image tag | `0.1.0` |
 | `image.pullPolicy` | Image pull policy | `IfNotPresent` |
-| `app.port` | Application port (used for container port and PORT env) | `8080` |
-| `app.logLevel` | Logging level (used for LOGGING_LEVEL env) | `info` |
-| `env.KUBECONFIG` | Environment variable KUBECONFIG | `~/.kube/config` |
-| `service.type` | Kubernetes service type | `ClusterIP` |
+| `nodeSelector` | Node selector for pod placement | `{}` |
+| `imagePullSecrets` | Image pull secrets | `[]` |
+| `app.port` | Application port | `8080` |
+| `app.logLevel` | Log level | `info` |
+| `env.KUBECONFIG` | Kubeconfig path | `~/.kube/config` |
+| `service.type` | Service type | `ClusterIP` |
 | `service.port` | Service port | `80` |
 | `deployment.replicas` | Number of replicas | `1` |
 | `deployment.resources.limits.cpu` | CPU limit | `500m` |
@@ -68,12 +66,72 @@ helm upgrade --install k8s-controller ./charts/app \
 | `deployment.resources.requests.cpu` | CPU request | `100m` |
 | `deployment.resources.requests.memory` | Memory request | `128Mi` |
 
-## CI/CD Integration
+## Values
 
-The image tag is automatically set by CI/CD to the Git tag (if present) or the commit SHA when a release is created.
+```yaml
+image:
+  repository: ghcr.io/vanelin/k8s-controller
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
 
-## Uninstall
+# Node selector for multi-arch support
+nodeSelector: {}
+  # kubernetes.io/arch: amd64
+  # kubernetes.io/arch: arm64
+
+# Image pull secrets (if needed for private registry)
+imagePullSecrets: []
+
+app:
+  port: 8080
+  logLevel: "info"
+
+env:
+  KUBECONFIG: "~/.kube/config"
+
+service:
+  type: ClusterIP
+  port: 80
+
+deployment:
+  replicas: 1
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+```
+
+## Upgrading
+
+```bash
+helm upgrade k8s-controller ./charts/app
+```
+
+## Uninstalling
 
 ```bash
 helm uninstall k8s-controller
+```
+
+## Troubleshooting
+
+### Check Pod Architecture
+
+```bash
+kubectl get pods -o wide
+```
+
+### Check Image Architecture
+
+```bash
+kubectl describe pod <pod-name>
+```
+
+### Verify Multi-Arch Manifest
+
+```bash
+docker manifest inspect ghcr.io/vanelin/k8s-controller:latest
 ```

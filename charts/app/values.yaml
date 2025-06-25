@@ -3,6 +3,14 @@ image:
   tag: "0.1.0" # This is set by CI to the Git tag or commit SHA
   pullPolicy: IfNotPresent
 
+# Node selector for multi-arch support
+nodeSelector: {}
+  # kubernetes.io/arch: amd64
+  # kubernetes.io/arch: arm64
+
+# Image pull secrets (if needed for private registry)
+imagePullSecrets: []
+
 # Application configuration
 app:
   port: 8080

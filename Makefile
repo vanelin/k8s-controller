@@ -10,7 +10,7 @@ APP=$(shell basename $(shell git remote get-url origin) |cut -d '.' -f1)
 REGISTRY ?=ghcr.io
 REPOSITORY ?=vanelin
 TARGETOS ?=linux
-TARGETOSARCH ?=arm64
+TARGETARCH ?=arm64
 VERSION ?=$(shell git describe --tags --always --dirty)
 SERVER_PORT ?=8080
 LOGGING_LEVEL ?=debug
@@ -27,7 +27,7 @@ GOFMT=$(GOCMD) fmt
 # Build flags
 BUILD_FLAGS = -v -o $(APP) -ldflags "-X github.com/vanelin/$(APP).git/cmd.appVersion=$(VERSION) -X github.com/vanelin/$(APP).git/cmd.buildTime=$(shell date -u '+%Y-%m-%d_%H:%M:%S')"
 
-.PHONY: all clean test run help server server-debug server-trace format get build build-linux docker-build docker-run docker-clean clean-all push
+.PHONY: all clean test run help server server-debug server-trace format get build build-linux docker-build docker-build-multi docker-run docker-clean clean-all push
 
 # Default target
 all: clean build
@@ -45,17 +45,17 @@ get:
 
 # Build the application
 build: format get
-	@echo "Building $(BINARY_NAME) for $(TARGETOS)/$(TARGETOSARCH)..."
-	CGO_ENABLED=0 GOOS=$(TARGETOS) GOARCH=$(TARGETOSARCH) $(GOBUILD) $(BUILD_FLAGS) $(MAIN_PATH)
+	@echo "Building $(BINARY_NAME) for $(TARGETOS)/$(TARGETARCH)..."
+	CGO_ENABLED=0 GOOS=$(TARGETOS) GOARCH=$(TARGETARCH) $(GOBUILD) $(BUILD_FLAGS) $(MAIN_PATH)
 	@echo "Build completed: $(BINARY_NAME)"
 
 # Build for different platforms
 build-linux:
 	@echo "Building for Linux..."
 	mkdir -p $(BUILD_DIR)
-	$(MAKE) build TARGETOS=linux TARGETOSARCH=amd64
+	$(MAKE) build TARGETOS=linux TARGETARCH=amd64
 	mv $(BINARY_NAME) $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64
-	$(MAKE) build TARGETOS=linux TARGETOSARCH=arm64
+	$(MAKE) build TARGETOS=linux TARGETARCH=arm64
 	mv $(BINARY_NAME) $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64
 
 # Clean build artifacts
@@ -176,27 +176,41 @@ dev-server: check-env get format lint test server
 # Production build
 prod: clean get test build
 
-# Docker build
+# Docker build for single architecture
 docker-build:
-	@echo "Building Docker image for $(TARGETOS)/$(TARGETOSARCH)..."
+	@echo "Building Docker image for $(TARGETOS)/$(TARGETARCH)..."
 	docker buildx build \
-		--platform $(TARGETOS)/$(TARGETOSARCH) \
+		--platform $(TARGETOS)/$(TARGETARCH) \
 		--build-arg VERSION=$(VERSION) \
 		--build-arg TARGETOS=$(TARGETOS) \
-		--build-arg TARGETOSARCH=$(TARGETOSARCH) \
+		--build-arg TARGETARCH=$(TARGETARCH) \
 		--build-arg SERVER_PORT=$(SERVER_PORT) \
 		--build-arg LOGGING_LEVEL=$(LOGGING_LEVEL) \
 		--load \
-		-t $(REGISTRY)/$(REPOSITORY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETOSARCH) \
-		-t $(REGISTRY)/$(REPOSITORY)/$(APP):latest-$(TARGETOS)-$(TARGETOSARCH) \
+		-t $(REGISTRY)/$(REPOSITORY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETARCH) \
+		-t $(REGISTRY)/$(REPOSITORY)/$(APP):latest-$(TARGETOS)-$(TARGETARCH) \
 		.
-	@echo "Docker image built: $(REGISTRY)/$(REPOSITORY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETOSARCH)"
+	@echo "Docker image built: $(REGISTRY)/$(REPOSITORY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETARCH)"
+
+# Multi-arch Docker build (creates manifest automatically)
+docker-build-multi:
+	@echo "Building multi-arch Docker image..."
+	docker buildx build \
+		--platform linux/amd64,linux/arm64 \
+		--build-arg VERSION=$(VERSION) \
+		--build-arg SERVER_PORT=$(SERVER_PORT) \
+		--build-arg LOGGING_LEVEL=$(LOGGING_LEVEL) \
+		--push \
+		-t $(REGISTRY)/$(REPOSITORY)/$(APP):$(VERSION) \
+		-t $(REGISTRY)/$(REPOSITORY)/$(APP):latest \
+		.
+	@echo "Multi-arch Docker image built and pushed: $(REGISTRY)/$(REPOSITORY)/$(APP):$(VERSION)"
 
 # Push Docker image
 push:
 	@echo "Pushing Docker image..."
-	docker push $(REGISTRY)/$(REPOSITORY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETOSARCH)
-	docker push $(REGISTRY)/$(REPOSITORY)/$(APP):latest-$(TARGETOS)-$(TARGETOSARCH)
+	docker push $(REGISTRY)/$(REPOSITORY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETARCH)
+	docker push $(REGISTRY)/$(REPOSITORY)/$(APP):latest-$(TARGETOS)-$(TARGETARCH)
 
 # Docker run
 docker-run: docker-build
@@ -208,19 +222,19 @@ docker-run: docker-build
 	docker run --rm -p $${ext_port:-$(SERVER_PORT)}:$${int_port:-$(SERVER_PORT)} \
 		-e PORT=$${int_port:-$(SERVER_PORT)} \
 		-e LOGGING_LEVEL=$${loglevel:-$(LOGGING_LEVEL)} \
-		$(REGISTRY)/$(REPOSITORY)/$(APP):latest-$(TARGETOS)-$(TARGETOSARCH) server
+		$(REGISTRY)/$(REPOSITORY)/$(APP):latest-$(TARGETOS)-$(TARGETARCH) server
 
 # Show help
 help:
 	@echo "Available commands:"
 	@echo ""
 	@echo "Build commands:"
-	@echo "  build          - Build the application (use TARGETOS/TARGETOSARCH for cross-compilation)"
+	@echo "  build          - Build the application (use TARGETOS/TARGETARCH for cross-compilation)"
 	@echo "  build-linux    - Build for Linux (amd64, arm64)"
 	@echo "  clean          - Clean build artifacts"
 	@echo ""
 	@echo "Cross-compilation example:"
-	@echo "  make build TARGETOS=linux TARGETOSARCH=arm64"
+	@echo "  make build TARGETOS=linux TARGETARCH=arm64"
 	@echo ""
 	@echo "Test commands:"
 	@echo "  test           - Run tests"
@@ -252,11 +266,12 @@ help:
 	@echo "  prod           - Production build (clean, get, test, build)"
 	@echo ""
 	@echo "Docker commands:"
-	@echo "  docker-build   - Build Docker image"
-	@echo "  docker-run     - Build and run Docker container interactively (external:internal ports)"
+	@echo "  docker-build   - Build single-arch Docker image"
+	@echo "  docker-build-multi - Build and push multi-arch Docker image (CI/CD)"
+	@echo "  docker-run     - Build and run single-arch Docker container"
 	@echo "  docker-clean   - Clean Docker images"
 	@echo "  clean-all      - Clean build artifacts and Docker images"
-	@echo "  push           - Push Docker image"
+	@echo "  push           - Push single-arch Docker image"
 	@echo ""
 	@echo "Help:"
 	@echo "  help           - Show this help message" 
