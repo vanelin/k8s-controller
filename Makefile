@@ -8,6 +8,7 @@ CONFIG_PATH=pkg/common/envs/.env
 
 APP=$(shell basename $(shell git remote get-url origin) |cut -d '.' -f1)
 REGISTRY ?=ghcr.io
+REPOSITORY ?=vanelin
 TARGETOS ?=linux
 TARGETOSARCH ?=arm64
 VERSION ?=$(shell git describe --tags --always --dirty)
@@ -69,7 +70,7 @@ clean:
 # Clean Docker images
 docker-clean:
 	@echo "Cleaning Docker images..."
-	@docker images $(REGISTRY)/$(APP) --format "table {{.Repository}}:{{.Tag}}" | grep -v "REPOSITORY:TAG" | xargs -r docker rmi || echo "No Docker images found to remove"
+	@docker images $(REGISTRY)/$(REPOSITORY)/$(APP) --format "table {{.Repository}}:{{.Tag}}" | grep -v "REPOSITORY:TAG" | xargs -r docker rmi || echo "No Docker images found to remove"
 
 # Clean everything (build artifacts + Docker images)
 clean-all: clean docker-clean
@@ -186,16 +187,16 @@ docker-build:
 		--build-arg SERVER_PORT=$(SERVER_PORT) \
 		--build-arg LOGGING_LEVEL=$(LOGGING_LEVEL) \
 		--load \
-		-t $(REGISTRY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETOSARCH) \
-		-t $(REGISTRY)/$(APP):latest-$(TARGETOS)-$(TARGETOSARCH) \
+		-t $(REGISTRY)/$(REPOSITORY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETOSARCH) \
+		-t $(REGISTRY)/$(REPOSITORY)/$(APP):latest-$(TARGETOS)-$(TARGETOSARCH) \
 		.
-	@echo "Docker image built: $(REGISTRY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETOSARCH)"
+	@echo "Docker image built: $(REGISTRY)/$(REPOSITORY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETOSARCH)"
 
 # Push Docker image
 push:
 	@echo "Pushing Docker image..."
-	docker push $(REGISTRY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETOSARCH)
-	docker push $(REGISTRY)/$(APP):latest-$(TARGETOS)-$(TARGETOSARCH)
+	docker push $(REGISTRY)/$(REPOSITORY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETOSARCH)
+	docker push $(REGISTRY)/$(REPOSITORY)/$(APP):latest-$(TARGETOS)-$(TARGETOSARCH)
 
 # Docker run
 docker-run: docker-build
@@ -207,7 +208,7 @@ docker-run: docker-build
 	docker run --rm -p $${ext_port:-$(SERVER_PORT)}:$${int_port:-$(SERVER_PORT)} \
 		-e PORT=$${int_port:-$(SERVER_PORT)} \
 		-e LOGGING_LEVEL=$${loglevel:-$(LOGGING_LEVEL)} \
-		$(REGISTRY)/$(APP):latest-$(TARGETOS)-$(TARGETOSARCH) server
+		$(REGISTRY)/$(REPOSITORY)/$(APP):latest-$(TARGETOS)-$(TARGETOSARCH) server
 
 # Show help
 help:
