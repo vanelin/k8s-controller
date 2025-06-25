@@ -7,7 +7,7 @@ MAIN_PATH=main.go
 CONFIG_PATH=pkg/common/envs/.env
 
 APP=$(shell basename $(shell git remote get-url origin) |cut -d '.' -f1)
-REGISTRY ?=vanelin
+REGISTRY ?=ghcr.io
 TARGETOS ?=linux
 TARGETOSARCH ?=arm64
 VERSION ?=$(shell git describe --tags --always --dirty)
@@ -26,7 +26,7 @@ GOFMT=$(GOCMD) fmt
 # Build flags
 BUILD_FLAGS = -v -o $(APP) -ldflags "-X github.com/vanelin/$(APP).git/cmd.appVersion=$(VERSION) -X github.com/vanelin/$(APP).git/cmd.buildTime=$(shell date -u '+%Y-%m-%d_%H:%M:%S')"
 
-.PHONY: all clean test run help server server-debug server-trace format get build build-linux docker-build docker-run docker-clean clean-all
+.PHONY: all clean test run help server server-debug server-trace format get build build-linux docker-build docker-run docker-clean clean-all push
 
 # Default target
 all: clean build
@@ -191,6 +191,12 @@ docker-build:
 		.
 	@echo "Docker image built: $(REGISTRY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETOSARCH)"
 
+# Push Docker image
+push:
+	@echo "Pushing Docker image..."
+	docker push $(REGISTRY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETOSARCH)
+	docker push $(REGISTRY)/$(APP):latest-$(TARGETOS)-$(TARGETOSARCH)
+
 # Docker run
 docker-run: docker-build
 	@echo "Running Docker container interactively (external:internal ports)..."
@@ -249,6 +255,7 @@ help:
 	@echo "  docker-run     - Build and run Docker container interactively (external:internal ports)"
 	@echo "  docker-clean   - Clean Docker images"
 	@echo "  clean-all      - Clean build artifacts and Docker images"
+	@echo "  push           - Push Docker image"
 	@echo ""
 	@echo "Help:"
 	@echo "  help           - Show this help message" 
