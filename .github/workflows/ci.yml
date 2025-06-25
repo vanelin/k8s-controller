@@ -24,7 +24,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  REPOSITORY: ${{ github.repository_owner }}
+  REPOSITORY: ${{ github.repository }}
   APP: k8s-controller
 
 jobs:
