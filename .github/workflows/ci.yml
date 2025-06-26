@@ -90,6 +90,7 @@ jobs:
         with:
           name: k8s-controller-${{ matrix.os }}-${{ matrix.arch }}
           path: k8s-controller
+          retention-days: 14
 
   docker-build:
     name: Build and Push Multi-Arch Docker Image
@@ -214,3 +215,4 @@ jobs:
         with:
           name: k8s-controller-helm-chart
           path: chart-artifacts/
+          retention-days: 14
