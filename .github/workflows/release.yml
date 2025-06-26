@@ -1,0 +1,107 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build-release:
+    name: Build Release Artifacts
+    runs-on: ubuntu-latest
+    env:
+      SERVER_PORT: 8080
+      LOGGING_LEVEL: info
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.3'
+
+      - name: Extract version (strip v)
+        id: version
+        run: |
+          RAW_TAG=${GITHUB_REF#refs/tags/}
+          VERSION=${RAW_TAG#v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Build binaries
+        run: |
+          make build-linux VERSION=${{ steps.version.outputs.version }} SERVER_PORT=$SERVER_PORT LOGGING_LEVEL=$LOGGING_LEVEL
+          mkdir -p release-files
+          tar -czvf release-files/k8s-controller-linux-amd64.tar.gz build/k8s-controller-linux-amd64
+          tar -czvf release-files/k8s-controller-linux-arm64.tar.gz build/k8s-controller-linux-arm64
+
+      - name: Update Helm chart version
+        uses: mikefarah/yq@master
+        with:
+          cmd: |
+            yq -i '.version=strenv(VERSION)' charts/app/Chart.yaml
+            yq -i '.appVersion=strenv(VERSION)' charts/app/Chart.yaml
+            yq -i '.image.tag=strenv(VERSION)' charts/app/values.yaml
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+
+      - name: Commit updated Helm chart version
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add charts/app/Chart.yaml charts/app/values.yaml
+          git commit -m "Update Helm chart version to ${{ steps.version.outputs.version }}"
+          git push
+
+      - name: Package Helm chart
+        run: |
+          helm package charts/app --version ${{ steps.version.outputs.version }} --app-version ${{ steps.version.outputs.version }}
+          mv k8s-controller-${{ steps.version.outputs.version }}.tgz release-files/k8s-controller-helm-chart.tgz
+
+      - name: Build and push Docker image
+        run: |
+          make docker-build-multi VERSION=${{ steps.version.outputs.version }} SERVER_PORT=$SERVER_PORT LOGGING_LEVEL=$LOGGING_LEVEL
+
+      - name: Extract changelog for this version
+        id: changelog
+        run: |
+          RAW_TAG=${GITHUB_REF#refs/tags/}
+          PREV_TAG=$(git tag --sort=-creatordate | grep -B1 "^$RAW_TAG$" | head -n1)
+          if [ -z "$PREV_TAG" ]; then PREV_TAG=$(git tag --sort=creatordate | head -n1); fi
+          echo 'changelog<<EOF' >> $GITHUB_OUTPUT
+          git log --pretty=format:'* %s (%h)' $PREV_TAG..$RAW_TAG >> $GITHUB_OUTPUT
+          echo 'EOF' >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ steps.version.outputs.version }}
+          body: |
+            ${{ steps.changelog.outputs.changelog }}
+            ## Changes in this release
+            
+            - Built from commit: ${{ github.sha }}
+            - Version: ${{ steps.version.outputs.version }}
+            - Docker images available for linux/amd64 and linux/arm64
+
+            ## 📦 Downloads
+
+            **Docker Image:**
+            ```bash
+            docker pull ghcr.io/${{ github.repository }}:${{ steps.version.outputs.version }}
+            ```
+
+            **Binary Archives:**
+            - **Linux (amd64)**: k8s-controller-linux-amd64.tar.gz
+            - **Linux (arm64)**: k8s-controller-linux-arm64.tar.gz
+
+            **Helm Chart:**
+            - k8s-controller-helm-chart.tgz
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
+          files: |
+            release-files/*
+          generate_release_notes: true 
