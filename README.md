@@ -8,6 +8,19 @@
 
 A Go-based Kubernetes controller with structured logging, environment configuration using Viper, and a FastHTTP server.
 
+## 📦 Release Artifacts
+
+- **Docker Image (multi-arch):**
+  ```bash
+  docker pull ghcr.io/vanelin/k8s-controller:<version>
+  # Example: docker pull ghcr.io/vanelin/k8s-controller:0.1.1
+  ```
+- **Binary Archives:**
+  - [Linux (amd64)](https://github.com/vanelin/k8s-controller/releases/latest/download/k8s-controller-linux-amd64.tar.gz)
+  - [Linux (arm64)](https://github.com/vanelin/k8s-controller/releases/latest/download/k8s-controller-linux-arm64.tar.gz)
+- **Helm Chart:**
+  - [k8s-controller-helm-chart.tgz](https://github.com/vanelin/k8s-controller/releases/latest/download/k8s-controller-helm-chart.tgz)
+
 ## Features
 
 - **FastHTTP Server** - High-performance HTTP server with configurable port and logging
@@ -15,12 +28,16 @@ A Go-based Kubernetes controller with structured logging, environment configurat
 - **Structured Logging** - Zero-config logging with zerolog
 - **Kubernetes Integration** - Built-in Kubernetes configuration support
 - **Development Tools** - Comprehensive Makefile with development workflows
+- **Multi-arch Docker** - Official images for `linux/amd64` and `linux/arm64`
+- **Helm Chart** - Easy deployment to Kubernetes
 
 ## Prerequisites
 
 - Go 1.24 or newer
 - Make
 - curl (for installing golangci-lint)
+- Docker (for building images)
+- Helm (for packaging/deploying charts)
 
 ## Project Structure
 
@@ -37,6 +54,7 @@ k8s-controller/
 │           └── .env
 ├── main.go              # Application entry point
 ├── Makefile             # Development and build commands
+├── charts/app/          # Helm chart
 └── README.md
 ```
 
@@ -62,13 +80,23 @@ make dev-server
 
 # Production build
 make prod
+
+# Build multi-arch Docker image (amd64, arm64)
+make docker-build-multi VERSION=0.1.1
+
+# Build and package Helm chart
+make build-linux VERSION=0.1.1
+helm package charts/app --version 0.1.1 --app-version 0.1.1
 ```
 
 ### Manual Build
 
 ```bash
 # Build the application
-go build -o k8s-controller
+make build
+
+# Build for Linux (amd64, arm64)
+make build-linux
 
 # Start FastHTTP server
 ./k8s-controller server
@@ -191,11 +219,33 @@ make dev-server
 - `make build-linux` - Build for Linux (amd64, arm64)
 - `make prod` - Production build
 
+### Docker Commands
+- `make docker-build` - Build single-arch Docker image
+- `make docker-build-multi` - Build and push multi-arch Docker image (amd64, arm64)
+- `make docker-run` - Build and run single-arch Docker container
+- `make docker-clean` - Clean Docker images
+- `make clean-all` - Clean build artifacts and Docker images
+- `make push` - Push single-arch Docker image
+
 ### Cross-compilation Examples
 ```bash
-make build TARGETOS=linux TARGETOSARCH=arm64
-make build TARGETOS=linux TARGETOSARCH=amd64
+make build TARGETOS=linux TARGETARCH=arm64
+make build TARGETOS=linux TARGETARCH=amd64
 ```
+
+## Helm Chart
+
+- The Helm chart is located in the `charts/app/` directory.
+- To package the chart:
+  ```bash
+  helm package charts/app --version <version> --app-version <version>
+  ```
+- To install the chart:
+  ```bash
+  helm upgrade --install k8s-controller ./k8s-controller-helm-chart.tgz \
+    --namespace <your-namespace> \
+    --create-namespace
+  ```
 
 ## Getting Help
 
