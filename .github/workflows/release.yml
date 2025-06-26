@@ -53,7 +53,7 @@ jobs:
           git config user.email github-actions@github.com
           git add charts/app/Chart.yaml charts/app/values.yaml
           git commit -m "Update Helm chart version to ${{ steps.version.outputs.version }}"
-          git push
+          git push origin HEAD:main
 
       - name: Package Helm chart
         run: |
