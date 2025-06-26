@@ -31,6 +31,7 @@ jobs:
           RAW_TAG=${GITHUB_REF#refs/tags/}
           VERSION=${RAW_TAG#v}
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "full_tag=$RAW_TAG" >> $GITHUB_OUTPUT
 
       - name: Build binaries
         run: |
@@ -44,10 +45,11 @@ jobs:
         with:
           cmd: |
             yq -i '.version=strenv(VERSION)' charts/app/Chart.yaml
-            yq -i '.appVersion=strenv(VERSION)' charts/app/Chart.yaml
+            yq -i '.appVersion=strenv(FULL_TAG)' charts/app/Chart.yaml
             yq -i '.image.tag=strenv(VERSION)' charts/app/values.yaml
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          FULL_TAG: ${{ steps.version.outputs.full_tag }}
 
       - name: Commit updated Helm chart version
         run: |
