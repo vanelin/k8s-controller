@@ -9,6 +9,8 @@ jobs:
   build-release:
     name: Build Release Artifacts
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     env:
       SERVER_PORT: 8080
       LOGGING_LEVEL: info
