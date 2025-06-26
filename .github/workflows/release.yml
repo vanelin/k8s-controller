@@ -60,7 +60,7 @@ jobs:
       - name: Package Helm chart
         run: |
           helm package charts/app --version ${{ steps.version.outputs.version }} --app-version ${{ steps.version.outputs.version }}
-          mv k8s-controller-${{ steps.version.outputs.version }}.tgz release-files/k8s-controller-helm-chart.tgz
+          mv controller-${{ steps.version.outputs.version }}.tgz release-files/k8s-controller-helm-chart.tgz
 
       - name: Build and push Docker image
         run: |
