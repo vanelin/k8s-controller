@@ -2,7 +2,7 @@
 
 ![Visitor](https://visitor-badge.laobi.icu/badge?page_id=vanelin.k8s-controller)
 [![Go Reference](https://pkg.go.dev/badge/github.com/vanelin/k8s-controller.svg?style=flat-square)](https://pkg.go.dev/github.com/vanelin/k8s-controller)
-[![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/vanelin/k8s-controller/go.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=test-n-build)](https://github.com/vanelin/k8s-controller/actions/workflows/release.yml)
+[![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/vanelin/k8s-controller/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=test-n-build)](https://github.com/vanelin/k8s-controller/actions/workflows/ci.yml)
 ![Repo size](https://img.shields.io/github/repo-size/vanelin/k8s-controller?style=flat-square)
 [![Updates](https://img.shields.io/github/last-commit/vanelin/k8s-controller.svg?style=flat-square&logo=git&logoColor=white&color=blue)](https://github.com/vanelin/k8s-controller/commits/main/)
 
