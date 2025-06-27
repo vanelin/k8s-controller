@@ -16,4 +16,4 @@ jobs:
           owner: vanelin
           name: k8s-controller
           token: ${{ secrets.PAT }}
-          tag-regex: '.*-[0-9a-f]{7,8}$'
+          tag: '.*-[0-9a-f]{7,8}$'
