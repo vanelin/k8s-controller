@@ -15,6 +15,7 @@ jobs:
     env:
       SERVER_PORT: 8080
       LOGGING_LEVEL: info
+      KUBECONFIG: ~.kube/config
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,7 +37,7 @@ jobs:
 
       - name: Build binaries
         run: |
-          make build-linux VERSION=${{ steps.version.outputs.version }} SERVER_PORT=$SERVER_PORT LOGGING_LEVEL=$LOGGING_LEVEL
+          make build-linux VERSION=${{ steps.version.outputs.version }} SERVER_PORT=$SERVER_PORT LOGGING_LEVEL=$LOGGING_LEVEL KUBECONFIG=$KUBECONFIG
           mkdir -p release-files
           tar -czvf release-files/k8s-controller-linux-amd64.tar.gz build/k8s-controller-linux-amd64
           tar -czvf release-files/k8s-controller-linux-arm64.tar.gz build/k8s-controller-linux-arm64
@@ -81,7 +82,7 @@ jobs:
 
       - name: Build and push Docker image
         run: |
-          make docker-build-multi VERSION=${{ steps.version.outputs.version }} SERVER_PORT=$SERVER_PORT LOGGING_LEVEL=$LOGGING_LEVEL
+          make docker-build-multi VERSION=${{ steps.version.outputs.version }} SERVER_PORT=$SERVER_PORT LOGGING_LEVEL=$LOGGING_LEVEL KUBECONFIG=$KUBECONFIG
 
       - name: Extract changelog for this version
         id: changelog
