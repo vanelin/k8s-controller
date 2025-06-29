@@ -28,11 +28,13 @@ env:
   APP: k8s-controller
 
 jobs:
-  build-binaries:
-    name: Build Binaries
+  build-and-docker:
+    name: Build Binaries and Docker Images
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      packages: write
+      security-events: write
     strategy:
       matrix:
         include:
@@ -51,7 +53,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24.3'
+          go-version: '1.24.4'
 
       - name: Set version
         id: vars
@@ -80,54 +82,21 @@ jobs:
       - name: Run tests
         run: make test
 
-      - name: Build binary
+      - name: Get dependencies and format code
         run: |
-          mkdir -p build
-          make build TARGETOS=${{ matrix.os }} TARGETOSARCH=${{ matrix.arch }} VERSION=${{ steps.vars.outputs.version }}
+          make get
+          make format
 
-      - name: Upload binary artifact
+      - name: Build binaries for all architectures
+        run: |
+          make build-linux VERSION=${{ steps.vars.outputs.version }}
+
+      - name: Upload binary artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: k8s-controller-${{ matrix.os }}-${{ matrix.arch }}
-          path: k8s-controller
+          name: k8s-controller-binaries
+          path: build/
           retention-days: 14
-
-  docker-build:
-    name: Build and Push Multi-Arch Docker Image
-    runs-on: ubuntu-latest
-    needs: build-binaries
-    permissions:
-      packages: write
-      security-events: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set version
-        id: vars
-        run: |
-          # Get the latest tag or use 0.1.0 as default
-          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "0.1.0")
-          SHORT_SHA=$(git rev-parse --short HEAD)
-          
-          if [[ $GITHUB_REF == refs/tags/* ]]; then
-            # If this is a tag push, use the tag as version
-            VERSION=${GITHUB_REF#refs/tags/}
-            APP_VERSION=${VERSION}
-            DOCKER_TAG=${VERSION}
-          else
-            # For commits, use latest tag + short SHA
-            VERSION="${LATEST_TAG}-${SHORT_SHA}"
-            APP_VERSION=${SHORT_SHA}
-            DOCKER_TAG="${LATEST_TAG}-${SHORT_SHA}"
-          fi
-          
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "app_version=$APP_VERSION" >> $GITHUB_OUTPUT
-          echo "docker_tag=$DOCKER_TAG" >> $GITHUB_OUTPUT
-          echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -163,7 +132,7 @@ jobs:
   helm-package:
     name: Package Helm Chart
     runs-on: ubuntu-latest
-    needs: docker-build
+    needs: build-and-docker
     permissions:
       contents: read
     steps:
