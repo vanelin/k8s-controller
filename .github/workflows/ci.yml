@@ -82,11 +82,25 @@ jobs:
         run: |
           make build-linux VERSION=${{ steps.vars.outputs.version }}
 
-      - name: Upload binary artifacts
+      - name: Create individual artifacts
+        run: |
+          mkdir -p artifacts
+          # Create compressed versions
+          tar -czvf artifacts/k8s-controller-linux-amd64.tar.gz -C build k8s-controller-linux-amd64
+          tar -czvf artifacts/k8s-controller-linux-arm64.tar.gz -C build k8s-controller-linux-arm64
+
+      - name: Upload compressed binary artifacts (amd64)
         uses: actions/upload-artifact@v4
         with:
-          name: k8s-controller-binaries
-          path: build/
+          name: k8s-controller-linux-amd64.tar.gz
+          path: artifacts/k8s-controller-linux-amd64.tar.gz
+          retention-days: 14
+
+      - name: Upload compressed binary artifacts (arm64)
+        uses: actions/upload-artifact@v4
+        with:
+          name: k8s-controller-linux-arm64.tar.gz
+          path: artifacts/k8s-controller-linux-arm64.tar.gz
           retention-days: 14
 
       - name: Set up Docker Buildx

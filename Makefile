@@ -27,7 +27,7 @@ GOFMT=$(GOCMD) fmt
 # Build flags
 BUILD_FLAGS = -v -o $(APP) -ldflags "-X github.com/vanelin/$(APP).git/cmd.appVersion=$(VERSION) -X github.com/vanelin/$(APP).git/cmd.buildTime=$(shell date -u '+%Y-%m-%d_%H:%M:%S')"
 
-.PHONY: all build build-linux clean test test-coverage format get lint server server-debug server-trace list list-namespace check-env dev-server dev docker-build docker-build-multi docker-clean clean-all push help vulncheck build-ci
+.PHONY: all build build-linux clean test test-coverage format get lint server server-debug server-trace list list-namespace check-env dev-server dev docker-build docker-build-multi docker-clean clean-all push help vulncheck
 
 # Default target
 all: clean build
@@ -43,12 +43,6 @@ get:
 	$(GOMOD) download
 	$(GOMOD) tidy
 	$(GOMOD) verify
-
-# Build for CI/CD (skips everything except build)
-build-ci:
-	@echo "Building $(BINARY_NAME) for $(TARGETOS)/$(TARGETARCH) (CI mode)..."
-	CGO_ENABLED=0 GOOS=$(TARGETOS) GOARCH=$(TARGETARCH) $(GOBUILD) $(BUILD_FLAGS) $(MAIN_PATH)
-	@echo "Build completed: $(BINARY_NAME)"
 
 # Build the application
 build: format get
@@ -203,7 +197,6 @@ help:
 	@echo ""
 	@echo "Build commands:"
 	@echo "  build          - Build the application (use TARGETOS/TARGETARCH for cross-compilation)"
-	@echo "  build-ci       - Build for CI/CD (compile only, format/deps handled in Dockerfile)"
 	@echo "  build-linux    - Build for Linux (amd64, arm64)"
 	@echo "  clean          - Clean build artifacts"
 	@echo ""
