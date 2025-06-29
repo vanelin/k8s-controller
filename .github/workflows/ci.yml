@@ -128,7 +128,7 @@ jobs:
             LOGGING_LEVEL=debug
 
       - name: Trivy Scan Docker Image
-        uses: aquasecurity/trivy-action@v0.31.0
+        uses: aquasecurity/trivy-action@0.31.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.REPOSITORY }}/${{ env.APP }}:${{ steps.vars.outputs.docker_tag }}
           format: 'sarif'
