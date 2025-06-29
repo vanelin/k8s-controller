@@ -17,7 +17,6 @@ ARG KUBECONFIG
 ENV PORT=$SERVER_PORT
 ENV LOGGING_LEVEL=$LOGGING_LEVEL
 ENV KUBECONFIG=$KUBECONFIG
-LABEL org.opencontainers.image.version=$VERSION
 LABEL org.opencontainers.image.source=https://github.com/vanelin/k8s-controller
 EXPOSE $SERVER_PORT
 ENTRYPOINT ["/k8s-controller"]

@@ -103,6 +103,9 @@ jobs:
           path: artifacts/k8s-controller-linux-arm64.tar.gz
           retention-days: 14
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -114,11 +117,18 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push multi-arch Docker image
-        run: |
-          make docker-build-multi VERSION=${{ steps.vars.outputs.version }} REPOSITORY=${{ env.REPOSITORY }}
+        uses: docker/build-push-action@v6
+        with:
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.REPOSITORY }}/${{ env.APP }}:${{ steps.vars.outputs.docker_tag }},${{ env.REGISTRY }}/${{ env.REPOSITORY }}/${{ env.APP }}:latest
+          build-args: |
+            VERSION=${{ steps.vars.outputs.version }}
+            SERVER_PORT=8080
+            LOGGING_LEVEL=debug
 
       - name: Trivy Scan Docker Image
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.31.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.REPOSITORY }}/${{ env.APP }}:${{ steps.vars.outputs.docker_tag }}
           format: 'sarif'
