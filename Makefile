@@ -27,7 +27,7 @@ GOFMT=$(GOCMD) fmt
 # Build flags
 BUILD_FLAGS = -v -o $(APP) -ldflags "-X github.com/vanelin/$(APP).git/cmd.appVersion=$(VERSION) -X github.com/vanelin/$(APP).git/cmd.buildTime=$(shell date -u '+%Y-%m-%d_%H:%M:%S')"
 
-.PHONY: all clean test run help server server-debug server-trace format get build build-linux docker-build docker-build-multi docker-run docker-clean clean-all push
+.PHONY: all build build-linux clean test test-coverage format get lint server server-debug server-trace list list-namespace check-env dev-server dev docker-build docker-build-multi docker-clean clean-all push help vulncheck
 
 # Default target
 all: clean build
@@ -42,6 +42,7 @@ get:
 	@echo "Getting dependencies..."
 	$(GOMOD) download
 	$(GOMOD) tidy
+	$(GOMOD) verify
 
 # Build the application
 build: format get
@@ -88,21 +89,6 @@ test-coverage:
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 
-# Run the application
-run: build
-	@echo "Running $(BINARY_NAME)..."
-	./$(BINARY_NAME)
-
-# Run with debug logging
-run-debug: build
-	@echo "Running $(BINARY_NAME) with debug logging..."
-	./$(BINARY_NAME) --log-level debug
-
-# Run with trace logging
-run-trace: build
-	@echo "Running $(BINARY_NAME) with trace logging..."
-	./$(BINARY_NAME) --log-level trace
-
 # Run server command
 server: build
 	@echo "Starting FastHTTP server..."
@@ -118,18 +104,16 @@ server-trace: build
 	@echo "Starting FastHTTP server with trace logging..."
 	./$(BINARY_NAME) server --log-level trace
 
-# Run server on custom port
-server-port: build
-	@echo "Starting FastHTTP server on custom port..."
-	@read -p "Enter port number: " port; \
-	./$(BINARY_NAME) server --port $$port
+# Run list command
+list: build
+	@echo "Listing Kubernetes deployments..."
+	./$(BINARY_NAME) list
 
-# Run server with custom environment variables
-server-env: build
-	@echo "Starting FastHTTP server with custom environment..."
-	@read -p "Enter port number (default: $(SERVER_PORT)): " port; \
-	read -p "Enter log level (debug/info/warn/error/trace, default: $(LOGGING_LEVEL)): " loglevel; \
-	PORT=$${port:-$(SERVER_PORT)} LOGGING_LEVEL=$${loglevel:-$(LOGGING_LEVEL)} ./$(BINARY_NAME) server
+# Run list with custom namespace
+list-namespace: build
+	@echo "Listing Kubernetes deployments in custom namespace..."
+	@read -p "Enter namespace (default: default): " namespace; \
+	./$(BINARY_NAME) list --namespace $${namespace:-default}
 
 # Check if .env file exists
 check-env:
@@ -149,26 +133,21 @@ lint:
 	@echo "Linting code..."
 	golangci-lint run
 
-# Install golangci-lint if not present
-install-lint:
-	@if ! command -v golangci-lint &> /dev/null; then \
-		echo "Installing golangci-lint..."; \
-		curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $$(go env GOPATH)/bin v2.1.6; \
-		echo "Please add $$(go env GOPATH)/bin to your PATH if not already done"; \
+# Check for vulnerabilities
+vulncheck:
+	@echo "Checking for vulnerabilities..."
+	@if command -v govulncheck >/dev/null 2>&1; then \
+		echo "govulncheck found, running vulnerability scan..."; \
+		govulncheck ./... || true; \
 	else \
-		echo "golangci-lint already installed"; \
-	fi
-
-# Uninstall golangci-lint
-delete-lint:
-	@if command -v golangci-lint &> /dev/null; then \
-		echo "Uninstalling golangci-lint..."; \
-		rm -f $$(go env GOPATH)/bin/golangci-lint; \
-		echo "golangci-lint uninstalled"; \
+		echo "govulncheck not installed. Installing..."; \
+		go install golang.org/x/vuln/cmd/govulncheck@latest; \
+		echo "govulncheck installed, running vulnerability scan..."; \
+		govulncheck ./... || true; \
 	fi
 
 # Development workflow
-dev: check-env get format lint test build run
+dev: check-env get format lint test vulncheck build
 
 # Server development workflow
 dev-server: check-env get format lint test server
@@ -212,18 +191,6 @@ push:
 	docker push $(REGISTRY)/$(REPOSITORY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETARCH)
 	docker push $(REGISTRY)/$(REPOSITORY)/$(APP):latest-$(TARGETOS)-$(TARGETARCH)
 
-# Docker run
-docker-run: docker-build
-	@echo "Running Docker container interactively (external:internal ports)..."
-	@echo -n "Enter FastHTTP server port (default: $(SERVER_PORT)): "; read int_port; \
-	echo -n "Enter external port (host port, default: $(SERVER_PORT)): "; read ext_port; \
-	echo -n "Enter log level (debug/info/warn/error/trace, default: $(LOGGING_LEVEL)): "; read loglevel; \
-	echo "Starting container with external port: $${ext_port:-$(SERVER_PORT)}, internal port: $${int_port:-$(SERVER_PORT)}, LOGGING_LEVEL: $${loglevel:-$(LOGGING_LEVEL)}..."; \
-	docker run --rm -p $${ext_port:-$(SERVER_PORT)}:$${int_port:-$(SERVER_PORT)} \
-		-e PORT=$${int_port:-$(SERVER_PORT)} \
-		-e LOGGING_LEVEL=$${loglevel:-$(LOGGING_LEVEL)} \
-		$(REGISTRY)/$(REPOSITORY)/$(APP):latest-$(TARGETOS)-$(TARGETARCH) server
-
 # Show help
 help:
 	@echo "Available commands:"
@@ -243,32 +210,27 @@ help:
 	@echo "Dependency commands:"
 	@echo "  get            - Get dependencies"
 	@echo "  format         - Format code"
-	@echo ""
-	@echo "Run commands:"
-	@echo "  run            - Build and run the application"
-	@echo "  run-debug      - Run with debug logging"
-	@echo "  run-trace      - Run with trace logging"
+	@echo "  lint           - Lint code"
+	@echo "  vulncheck      - Check for vulnerabilities in dependencies"
 	@echo ""
 	@echo "Server commands:"
 	@echo "  server         - Build and start FastHTTP server"
 	@echo "  server-debug   - Start server with debug logging"
 	@echo "  server-trace   - Start server with trace logging"
-	@echo "  server-port    - Start server on custom port (interactive)"
-	@echo "  server-env     - Start server with custom environment"
+	@echo ""
+	@echo "List commands:"
+	@echo "  list           - List Kubernetes deployments"
+	@echo "  list-namespace - List Kubernetes deployments in custom namespace"
 	@echo ""
 	@echo "Development commands:"
 	@echo "  check-env      - Check/create .env file"
-	@echo "  lint           - Lint code"
-	@echo "  install-lint   - Install golangci-lint"
-	@echo "  delete-lint    - Delete golangci-lint"
-	@echo "  dev            - Development workflow (check-env, get, format, lint, test, build, run)"
+	@echo "  dev            - Development workflow (check-env, get, format, lint, test, build)"
 	@echo "  dev-server     - Server development workflow (check-env, get, format, lint, test, server)"
 	@echo "  prod           - Production build (clean, get, test, build)"
 	@echo ""
 	@echo "Docker commands:"
 	@echo "  docker-build   - Build single-arch Docker image"
 	@echo "  docker-build-multi - Build and push multi-arch Docker image (CI/CD)"
-	@echo "  docker-run     - Build and run single-arch Docker container"
 	@echo "  docker-clean   - Clean Docker images"
 	@echo "  clean-all      - Clean build artifacts and Docker images"
 	@echo "  push           - Push single-arch Docker image"
