@@ -1,6 +1,6 @@
 module github.com/vanelin/k8s-controller.git
 
-go 1.24.3
+go 1.24.4
 
 require (
 	github.com/rs/zerolog v1.34.0
