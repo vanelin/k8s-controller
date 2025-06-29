@@ -1,12 +1,11 @@
 # syntax=docker/dockerfile:1.7
 FROM --platform=${TARGETPLATFORM} golang:1.24-alpine AS builder
-RUN apk add --no-cache make git
 WORKDIR /app
 COPY . .
 ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=dev
-RUN make build-ci TARGETOS=$TARGETOS TARGETARCH=$TARGETARCH VERSION=$VERSION
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -v -o k8s-controller -ldflags "-X github.com/vanelin/k8s-controller.git/cmd.appVersion=$VERSION" main.go
 
 # Final stage
 FROM --platform=${TARGETPLATFORM} gcr.io/distroless/static-debian12
