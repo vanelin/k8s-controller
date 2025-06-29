@@ -273,7 +273,7 @@ start() {
         sudo kubebuilder/bin/etcd \
             --advertise-client-urls http://$HOST_IP:2379 \
             --listen-client-urls http://0.0.0.0:2379 \
-            --data-dir ./etcd \
+            --data-dir $HOME/etcd \
             --listen-peer-urls http://0.0.0.0:2380 \
             --initial-cluster default=http://$HOST_IP:2380 \
             --initial-advertise-peer-urls http://$HOST_IP:2380 \
@@ -445,7 +445,7 @@ cleanup() {
     sudo umount -l /run/containerd-k8s/io.containerd.runtime.v2.task/*/rootfs 2>/dev/null || true
     sleep 2
 
-    sudo rm -rf ./etcd
+    sudo rm -rf $HOME/etcd
     sudo rm -rf /var/lib/kubelet/*
     sudo rm -rf /run/containerd-k8s/*
     sudo rm -rf /var/lib/containerd-k8s/*
