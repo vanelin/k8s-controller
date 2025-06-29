@@ -13,7 +13,7 @@ jobs:
       - name: Delete images with short SHA in tag
         uses: bots-house/ghcr-delete-image-action@v1.1.0
         with:
-          owner: vanelin
+          owner: ${{ github.repository_owner }}
           name: k8s-controller
           token: ${{ secrets.PAT }}
           tag: '.*-[0-9a-f]{7,8}$'
