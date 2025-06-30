@@ -176,7 +176,7 @@ jobs:
         with:
           platforms: ${{ matrix.platform }}
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.REPOSITORY }}/${{ env.APP }}:${{ needs.calculate-version.outputs.docker_tag }}-${{ matrix.platform }}
+          tags: ${{ env.REGISTRY }}/${{ env.REPOSITORY }}/${{ env.APP }}:${{ needs.calculate-version.outputs.docker_tag }}-${{ env.PLATFORM_PAIR }}
           cache-from: |
             type=local,src=/tmp/.buildx-cache
             type=local,src=~/.cache/go-build
@@ -194,7 +194,7 @@ jobs:
       - name: Export image info
         run: |
           mkdir -p ${{ runner.temp }}/images
-          echo "${{ env.REGISTRY }}/${{ env.REPOSITORY }}/${{ env.APP }}:${{ needs.calculate-version.outputs.docker_tag }}-${{ matrix.platform }}" > ${{ runner.temp }}/images/${{ env.PLATFORM_PAIR }}
+          echo "${{ env.REGISTRY }}/${{ env.REPOSITORY }}/${{ env.APP }}:${{ needs.calculate-version.outputs.docker_tag }}-${{ env.PLATFORM_PAIR }}" > ${{ runner.temp }}/images/${{ env.PLATFORM_PAIR }}
 
       - name: Upload image info
         uses: actions/upload-artifact@v4
