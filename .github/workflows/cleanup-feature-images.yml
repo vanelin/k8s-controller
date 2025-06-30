@@ -2,7 +2,7 @@ name: Cleanup Feature Branch Images
 
 on:
   schedule:
-    - cron: "0 1 * * SUN"
+    - cron: "0 2 * * *"
   workflow_dispatch:
 
 jobs:
@@ -13,10 +13,12 @@ jobs:
       contents: read
       packages: write
     steps:
-      - name: Delete images with short SHA in tag
-        uses: bots-house/ghcr-delete-image-action@v1.1.0
+      - name: Delete feature branch images (keep main versions)
+        uses: actions/delete-package-versions@v5
         with:
           owner: ${{ github.repository_owner }}
-          name: k8s-controller
+          package-name: k8s-controller
+          package-type: container
           token: ${{ secrets.PAT }}
-          tag: '.*-[0-9a-f]{7,8}$'
+          min-versions-to-keep: 3
+          ignore-versions: '^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$'

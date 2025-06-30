@@ -2,7 +2,7 @@ name: Cleanup Untagged Images
 
 on:
   schedule:
-    - cron: "0 0 * * SUN"
+    - cron: "0 1 * * *"
   workflow_dispatch:
 
 jobs:
@@ -13,9 +13,11 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: bots-house/ghcr-delete-image-action@v1.1.0
+      - uses: actions/delete-package-versions@v5
         with:
           owner: ${{ github.repository_owner }}
-          name: k8s-controller
+          package-name: k8s-controller
+          package-type: container
+          delete-only-untagged-versions: true
+          min-versions-to-keep: 2
           token: ${{ secrets.PAT }}
-          untagged-keep-latest: 2
