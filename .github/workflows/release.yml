@@ -12,9 +12,13 @@ jobs:
     permissions:
       contents: write
       packages: write
+      security-events: write
+      attestations: write
+      id-token: write
     env:
       SERVER_PORT: 8080
       LOGGING_LEVEL: info
+      KUBECONFIG: ~.kube/config
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -24,7 +28,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24.3'
+          go-version: '1.24.4'
 
       - name: Extract version (strip v)
         id: version
@@ -36,7 +40,7 @@ jobs:
 
       - name: Build binaries
         run: |
-          make build-linux VERSION=${{ steps.version.outputs.version }} SERVER_PORT=$SERVER_PORT LOGGING_LEVEL=$LOGGING_LEVEL
+          make build-linux VERSION=${{ steps.version.outputs.version }} SERVER_PORT=$SERVER_PORT LOGGING_LEVEL=$LOGGING_LEVEL KUBECONFIG=$KUBECONFIG
           mkdir -p release-files
           tar -czvf release-files/k8s-controller-linux-amd64.tar.gz build/k8s-controller-linux-amd64
           tar -czvf release-files/k8s-controller-linux-arm64.tar.gz build/k8s-controller-linux-arm64
@@ -69,6 +73,9 @@ jobs:
           helm package charts/app --version ${{ steps.version.outputs.version }} --app-version ${{ steps.version.outputs.version }}
           mv controller-${{ steps.version.outputs.version }}.tgz release-files/k8s-controller-helm-chart.tgz
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -79,9 +86,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push Docker image
-        run: |
-          make docker-build-multi VERSION=${{ steps.version.outputs.version }} SERVER_PORT=$SERVER_PORT LOGGING_LEVEL=$LOGGING_LEVEL
+      - name: Build and push multi-arch Docker image
+        uses: docker/build-push-action@v6
+        with:
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/${{ github.repository }}:${{ steps.version.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max,ignore-error=true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          provenance: false
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
+            SERVER_PORT=${{ env.SERVER_PORT }}
+            LOGGING_LEVEL=${{ env.LOGGING_LEVEL }}
 
       - name: Extract changelog for this version
         id: changelog
