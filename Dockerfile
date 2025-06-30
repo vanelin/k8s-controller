@@ -1,12 +1,15 @@
 # syntax=docker/dockerfile:1.7
 FROM --platform=${TARGETPLATFORM} golang:1.24-alpine AS builder
 WORKDIR /app
+COPY go.mod go.sum ./
+RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
+    go mod download
 COPY . .
 ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=dev
-RUN --mount=type=cache,target=/root/.cache/go-build \
-    --mount=type=cache,target=/go/pkg/mod \
+RUN --mount=type=cache,id=gobuild,target=/root/.cache/go-build \
+    --mount=type=cache,id=gomod,target=/go/pkg/mod \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -v -o k8s-controller -ldflags "-X github.com/vanelin/k8s-controller.git/cmd.appVersion=$VERSION" main.go
 
 # Final stage
