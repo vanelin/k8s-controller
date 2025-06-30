@@ -150,7 +150,7 @@ jobs:
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.REPOSITORY }}/${{ env.APP }}:${{ needs.calculate-version.outputs.docker_tag }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=max,ignore-error=true
           github-token: ${{ secrets.GITHUB_TOKEN }}
           build-args: |
             VERSION=${{ needs.calculate-version.outputs.version }}
