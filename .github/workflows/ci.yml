@@ -155,8 +155,21 @@ jobs:
       - name: Fix cache permissions
         if: steps.cache.outputs.cache-hit == 'true'
         run: |
-          if [ -d "go-build-cache" ]; then  
-            sudo chown -R $(id -u):$(id -g) go-build-cache
+          if [ -d "go-build-cache" ]; then
+            echo "=== Before permission fix ==="
+            ls -la go-build-cache/ | head -10
+            find go-build-cache -type d ! -perm 755 | head -5
+            
+            echo "=== Fixing permissions ==="
+            sudo find go-build-cache -type d -exec chmod 755 {} \;
+            sudo find go-build-cache -type f -exec chmod 644 {} \;
+            
+            echo "=== After permission fix ==="
+            ls -la go-build-cache/ | head -10
+            echo "Directory count: $(find go-build-cache -type d | wc -l)"
+            echo "File count: $(find go-build-cache -type f | wc -l)"
+          else
+            echo "go-build-cache directory does not exist - cache miss"
           fi
 
       - name: Inject go-build-cache
