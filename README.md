@@ -25,12 +25,13 @@ A Go-based Kubernetes controller with structured logging, environment configurat
 ## Features
 
 - **FastHTTP Server** - High-performance HTTP server with configurable port and logging
-- **Smart Configuration** - Load from `.env` files, environment variables, or CLI flags
+- **Kubernetes Integration** - List deployments and manage Kubernetes resources with namespace support
+- **Smart Configuration** - Load from `.env` files, environment variables, or CLI flags with proper priority
 - **Structured Logging** - Zero-config logging with zerolog
-- **Kubernetes Integration** - Built-in Kubernetes configuration support
 - **Development Tools** - Comprehensive Makefile with development workflows
 - **Multi-arch Docker** - Official images for `linux/amd64` and `linux/arm64`
 - **Helm Chart** - Easy deployment to Kubernetes
+- **Comprehensive Testing** - Unit tests with coverage reporting
 
 ## Prerequisites
 
@@ -39,6 +40,7 @@ A Go-based Kubernetes controller with structured logging, environment configurat
 - curl (for installing golangci-lint)
 - Docker (for building images)
 - Helm (for packaging/deploying charts)
+- Kubernetes cluster access (for list command)
 
 ## Project Structure
 
@@ -46,11 +48,15 @@ A Go-based Kubernetes controller with structured logging, environment configurat
 k8s-controller/
 ├── cmd/
 │   ├── root.go          # Main CLI application
-│   └── server.go        # FastHTTP server command
+│   ├── server.go        # FastHTTP server command
+│   ├── server_test.go   # Tests for server command
+│   ├── list.go          # Kubernetes deployments list command
+│   └── list_test.go     # Tests for list command
 ├── pkg/
 │   └── common/
 │       ├── config/      # Configuration management
-│       │   └── config.go
+│       │   ├── config.go
+│       │   └── config_test.go
 │       └── envs/        # Environment files
 │           └── .env
 ├── main.go              # Application entry point
@@ -73,8 +79,14 @@ make server
 # Start server with debug logging
 make server-debug
 
-# Start server with custom port (interactive)
-make server-port
+# Start server with trace logging
+make server-trace
+
+# List Kubernetes deployments
+make list
+
+# List deployments in custom namespace
+make list-namespace
 
 # Development workflow
 make dev-server
@@ -105,15 +117,24 @@ make build-linux
 # Start server with custom port and log level
 ./k8s-controller server --port 9090 --log-level debug
 
+# List Kubernetes deployments
+./k8s-controller list
+
+# List deployments in custom namespace
+./k8s-controller list --namespace kube-system
+
 # Using short flags
 ./k8s-controller server -p 8080 -l debug
+./k8s-controller list -n kube-system
 ```
 
-## FastHTTP Server
+## Commands
+
+### FastHTTP Server
 
 The main feature of this application is a high-performance FastHTTP server that can be configured through multiple methods.
 
-### Basic Usage
+#### Basic Usage
 
 ```bash
 # Development mode
@@ -126,19 +147,78 @@ go run main.go server
 ./k8s-controller server --port 9090 --log-level debug
 ```
 
-### What it does
+#### What it does
 
 - Starts a FastHTTP server on the specified port (default: 8080)
 - Responds with "Hello from FastHTTP!" to any HTTP request
 - Uses structured logging with configurable levels
 - Supports hot-reload configuration via environment variables
 
-### Configuration Priority
+### Kubernetes List Command
 
-1. **CLI flags** (`--port`, `--log-level`) - highest priority
-2. **Environment variables** (`PORT`, `LOGGING_LEVEL`)
-3. **`.env` file** values
-4. **Default values** (PORT=8080, LOGGING_LEVEL=info)
+List Kubernetes deployments in the specified namespace with configurable kubeconfig and comprehensive error handling.
+
+#### Basic Usage
+
+```bash
+# Run kubernetes-control-plane using script
+./scripts/setup-arm64.sh start
+
+# Creating test deployment
+kubebuilder/bin/kubectl apply -f - <<EOF
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-nginx-deployment
+  labels:
+    app: test-nginx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: test-nginx
+  template:
+    metadata:
+      labels:
+        app: test-nginx
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.21
+        ports:
+        - containerPort: 80
+        securityContext:
+          privileged: true
+        resources: {}
+EOF
+
+# List deployments using default kubeconfig and namespace
+./k8s-controller list
+
+# List deployments with debug logging
+./k8s-controller list --log-level debug
+
+# List deployments in custom namespace
+./k8s-controller list --namespace kube-system
+```
+
+#### What it does
+
+- Connects to Kubernetes cluster using specified kubeconfig with proper priority handling
+- Validates namespace existence and provides helpful error messages
+- Lists all deployments in the specified namespace (default: 'default')
+- Shows available namespaces if the requested namespace doesn't exist
+- Uses structured logging for connection and error reporting
+- Supports multiple configuration sources with proper priority
+
+#### Error Handling
+
+The list command provides comprehensive error handling:
+
+- **Invalid kubeconfig**: Shows clear error message with kubeconfig path
+- **Non-existent namespace**: Lists all available namespaces to help user choose correct one
+- **Connection issues**: Provides detailed error messages for troubleshooting
+- **Permission issues**: Clear indication of authentication/authorization problems
 
 ## Configuration
 
@@ -150,7 +230,18 @@ go run main.go server
 | `KUBECONFIG` | Path to Kubernetes configuration file | `~/.kube/config` | No |
 | `LOGGING_LEVEL` | Logging level (trace, debug, info, warn, error) | `info` | No |
 
+### Configuration Priority
+
+Both server and list commands follow the same configuration priority:
+
+1. **CLI flags** (`--port`, `--log-level`, `--kubeconfig`, `--namespace`) - highest priority
+2. **Environment variables** (`PORT`, `LOGGING_LEVEL`, `KUBECONFIG`)
+3. **`.env` file** values
+4. **Default values** (PORT=8080, LOGGING_LEVEL=info, KUBECONFIG=~/.kube/config, namespace=default)
+
 ### Configuration Examples
+
+#### Server Configuration
 
 ```bash
 # Zero-configuration (uses defaults)
@@ -173,6 +264,25 @@ EOF
 export PORT=9090 && ./k8s-controller server --log-level trace
 ```
 
+#### List Command Configuration
+
+```bash
+# Default configuration
+./k8s-controller list
+
+# Custom kubeconfig
+./k8s-controller list --kubeconfig ~/.kube/config-prod
+
+# Custom namespace
+./k8s-controller list --namespace kube-system
+
+# Environment variable for kubeconfig
+export KUBECONFIG=/path/to/kubeconfig && ./k8s-controller list
+
+# Mixed configuration
+export KUBECONFIG=/path/to/kubeconfig && ./k8s-controller list --namespace monitoring --log-level debug
+```
+
 ## Development
 
 ### Development Mode
@@ -181,8 +291,12 @@ export PORT=9090 && ./k8s-controller server --log-level trace
 # Run server directly
 go run main.go server
 
+# Run list command directly
+go run main.go list
+
 # With custom settings
 go run main.go server --port 8080 --log-level debug
+go run main.go list --kubeconfig /path/to/config --log-level debug
 ```
 
 ### Testing
@@ -204,28 +318,38 @@ make dev-server
 - `make server` - Build and start FastHTTP server
 - `make server-debug` - Start server with debug logging
 - `make server-trace` - Start server with trace logging
-- `make server-port` - Start server on custom port (interactive)
-- `make server-env` - Start server with custom environment (interactive)
 
-### Development Commands
-- `make dev` - Complete development workflow
-- `make dev-server` - Server development workflow
-- `make test` - Run tests
-- `make test-coverage` - Run tests with coverage
+### List Commands
+- `make list` - Build and run list command
+- `make list-namespace` - Run list command with custom namespace (interactive)
+
+### Test Commands
+- `make test` - Run all tests
+- `make test-coverage` - Run tests with coverage report
+
+### Dependency Commands
+- `make get` - Get and verify dependencies
 - `make format` - Format code
 - `make lint` - Lint code
+- `make vulncheck` - Check for vulnerabilities in dependencies (auto-installs govulncheck if needed)
+
+### Development Commands
+- `make dev` - Development workflow (check-env, get, format, lint, test, vulncheck, build)
+- `make dev-server` - Server development workflow (check-env, get, format, lint, test, server)
+- `make check-env` - Check/create .env file
+- `make prod` - Production build (clean, get, test, build)
 
 ### Build Commands
 - `make build` - Build the application
 - `make build-linux` - Build for Linux (amd64, arm64)
-- `make prod` - Production build
+- `version-info` - Show version information"
+- `make clean` - Clean build artifacts
+- `make clean-all` - Clean build artifacts and Docker images
 
 ### Docker Commands
 - `make docker-build` - Build single-arch Docker image
 - `make docker-build-multi` - Build and push multi-arch Docker image (amd64, arm64)
-- `make docker-run` - Build and run single-arch Docker container
 - `make docker-clean` - Clean Docker images
-- `make clean-all` - Clean build artifacts and Docker images
 - `make push` - Push single-arch Docker image
 
 ### Cross-compilation Examples
@@ -256,6 +380,9 @@ make build TARGETOS=linux TARGETARCH=amd64
 
 # Server command help
 ./k8s-controller server --help
+
+# List command help
+./k8s-controller list --help
 
 # Makefile help
 make help

@@ -85,6 +85,9 @@ func TestConfig_PrintConfig(t *testing.T) {
 }
 
 func TestLoadConfig_WithEnvFile(t *testing.T) {
+	// Reset Viper to clear any cached values
+	viper.Reset()
+
 	// Create a temporary directory for test
 	tempDir := t.TempDir()
 

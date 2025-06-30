@@ -22,26 +22,95 @@ on:
       - 'pkg/**'
       - '.github/workflows/ci.yml'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   REGISTRY: ghcr.io
   REPOSITORY: ${{ github.repository_owner }}
   APP: k8s-controller
 
 jobs:
-  build-binaries:
-    name: Build Binaries
+  codeql:
+    name: CodeQL
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: read
+      security-events: write
     strategy:
+      fail-fast: false
       matrix:
-        include:
-          - os: linux
-            arch: amd64
-            platform: linux/amd64
-          - os: linux
-            arch: arm64
-            platform: linux/arm64
+        language: ['go']
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-extended,security-and-quality
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{matrix.language}}"
+
+  calculate-version:
+    name: Calculate Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.vars.outputs.version }}
+      app_version: ${{ steps.vars.outputs.app_version }}
+      docker_tag: ${{ steps.vars.outputs.docker_tag }}
+      latest_tag: ${{ steps.vars.outputs.latest_tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set version
+        id: vars
+        run: |
+          # Get the latest tag or use 0.1.0 as default
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "0.1.0")
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            # If this is a tag push, use the tag as version (remove "v" prefix)
+            RAW_TAG=${GITHUB_REF#refs/tags/}
+            VERSION=${RAW_TAG#v}
+            APP_VERSION=${RAW_TAG}
+            DOCKER_TAG=${VERSION}
+          else
+            # For commits, use latest tag + short SHA (remove "v" prefix from tag)
+            LATEST_TAG_CLEAN=${LATEST_TAG#v}
+            VERSION="${LATEST_TAG_CLEAN}-${SHORT_SHA}"
+            APP_VERSION="${LATEST_TAG}-${SHORT_SHA}"
+            DOCKER_TAG="${VERSION}"
+          fi
+          
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "app_version=$APP_VERSION" >> $GITHUB_OUTPUT
+          echo "docker_tag=$DOCKER_TAG" >> $GITHUB_OUTPUT
+          echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    needs: calculate-version
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+      attestations: write
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -51,86 +120,52 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24.3'
-
-      - name: Set version
-        id: vars
-        run: |
-          # Get the latest tag or use 0.1.0 as default
-          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "0.1.0")
-          SHORT_SHA=$(git rev-parse --short HEAD)
-          
-          if [[ $GITHUB_REF == refs/tags/* ]]; then
-            # If this is a tag push, use the tag as version
-            VERSION=${GITHUB_REF#refs/tags/}
-            APP_VERSION=${VERSION}
-            DOCKER_TAG=${VERSION}
-          else
-            # For commits, use latest tag + short SHA
-            VERSION="${LATEST_TAG}-${SHORT_SHA}"
-            APP_VERSION=${SHORT_SHA}
-            DOCKER_TAG="${LATEST_TAG}-${SHORT_SHA}"
-          fi
-          
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "app_version=$APP_VERSION" >> $GITHUB_OUTPUT
-          echo "docker_tag=$DOCKER_TAG" >> $GITHUB_OUTPUT
-          echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+          go-version: '1.24.4'
+          cache: true
 
       - name: Run tests
         run: make test
 
-      - name: Build binary
+      - name: Get dependencies and format code
         run: |
-          mkdir -p build
-          make build TARGETOS=${{ matrix.os }} TARGETOSARCH=${{ matrix.arch }} VERSION=${{ steps.vars.outputs.version }}
+          make get
+          make format
 
-      - name: Upload binary artifact
+      - name: Build binaries
+        run: |
+          make build-linux VERSION=${{ needs.calculate-version.outputs.version }}
+
+      - name: Create individual artifacts
+        run: |
+          mkdir -p artifacts
+          # Create compressed versions
+          tar -czvf artifacts/k8s-controller-linux-amd64.tar.gz -C build k8s-controller-linux-amd64
+          tar -czvf artifacts/k8s-controller-linux-arm64.tar.gz -C build k8s-controller-linux-arm64
+
+      - name: Upload compressed binary artifacts (amd64)
         uses: actions/upload-artifact@v4
         with:
-          name: k8s-controller-${{ matrix.os }}-${{ matrix.arch }}
-          path: k8s-controller
-          retention-days: 14
+          name: k8s-controller-linux-amd64.tar.gz
+          path: artifacts/k8s-controller-linux-amd64.tar.gz
+          retention-days: 7
 
-  docker-build:
-    name: Build and Push Multi-Arch Docker Image
-    runs-on: ubuntu-latest
-    needs: build-binaries
-    permissions:
-      packages: write
-      security-events: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Upload compressed binary artifacts (arm64)
+        uses: actions/upload-artifact@v4
         with:
-          fetch-depth: 0
+          name: k8s-controller-linux-arm64.tar.gz
+          path: artifacts/k8s-controller-linux-arm64.tar.gz
+          retention-days: 7
 
-      - name: Set version
-        id: vars
-        run: |
-          # Get the latest tag or use 0.1.0 as default
-          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "0.1.0")
-          SHORT_SHA=$(git rev-parse --short HEAD)
-          
-          if [[ $GITHUB_REF == refs/tags/* ]]; then
-            # If this is a tag push, use the tag as version
-            VERSION=${GITHUB_REF#refs/tags/}
-            APP_VERSION=${VERSION}
-            DOCKER_TAG=${VERSION}
-          else
-            # For commits, use latest tag + short SHA
-            VERSION="${LATEST_TAG}-${SHORT_SHA}"
-            APP_VERSION=${SHORT_SHA}
-            DOCKER_TAG="${LATEST_TAG}-${SHORT_SHA}"
-          fi
-          
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "app_version=$APP_VERSION" >> $GITHUB_OUTPUT
-          echo "docker_tag=$DOCKER_TAG" >> $GITHUB_OUTPUT
-          echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        id: setup-buildx
+        with:
+          version: latest
+          driver-opts: |
+            image=moby/buildkit:v0.23.1
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -139,14 +174,54 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push multi-arch Docker image
+      - name: Go Build Cache for Docker
+        uses: actions/cache@v4
+        id: cache
+        with:
+          path: go-build-cache
+          key: ${{ runner.os }}-go-build-cache-${{ hashFiles('**/go.sum') }}
+
+      - name: Fix cache permissions
+        if: steps.cache.outputs.cache-hit == 'true'
         run: |
-          make docker-build-multi VERSION=${{ steps.vars.outputs.version }} REPOSITORY=${{ env.REPOSITORY }}
+          if [ -d "go-build-cache" ]; then
+            echo "Fixing go-build-cache permissions..."
+            sudo find go-build-cache -type d -exec chmod 755 {} \;
+            sudo find go-build-cache -type f -exec chmod 644 {} \;
+            echo "Cache permissions fixed. Files: $(find go-build-cache -type f | wc -l), Directories: $(find go-build-cache -type d | wc -l)"
+          else
+            echo "go-build-cache directory does not exist - cache miss"
+          fi
+
+      - name: Inject go-build-cache
+        uses: reproducible-containers/buildkit-cache-dance@v3.3.0
+        with:
+          builder: ${{ steps.setup-buildx.outputs.name }}
+          cache-map: |
+            {
+              "go-build-cache": "/root/.cache/go-build"
+            }
+          skip-extraction: ${{ steps.cache.outputs.cache-hit }}
+
+      - name: Build and push multi-arch Docker image
+        uses: docker/build-push-action@v6
+        with:
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.REPOSITORY }}/${{ env.APP }}:${{ needs.calculate-version.outputs.docker_tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max,ignore-error=true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          provenance: false
+          build-args: |
+            VERSION=${{ needs.calculate-version.outputs.version }}
+            SERVER_PORT=8080
+            LOGGING_LEVEL=debug
 
       - name: Trivy Scan Docker Image
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.31.0
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.REPOSITORY }}/${{ env.APP }}:${{ steps.vars.outputs.docker_tag }}
+          image-ref: ${{ env.REGISTRY }}/${{ env.REPOSITORY }}/${{ env.APP }}:${{ needs.calculate-version.outputs.docker_tag }}
           format: 'sarif'
           output: 'trivy-image-results.sarif'
 
@@ -163,7 +238,7 @@ jobs:
   helm-package:
     name: Package Helm Chart
     runs-on: ubuntu-latest
-    needs: docker-build
+    needs: [calculate-version, build-and-test]
     permissions:
       contents: read
     steps:
@@ -172,47 +247,23 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set version
-        id: vars
-        run: |
-          # Get the latest tag or use 0.1.0 as default
-          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "0.1.0")
-          SHORT_SHA=$(git rev-parse --short HEAD)
-          
-          if [[ $GITHUB_REF == refs/tags/* ]]; then
-            # If this is a tag push, use the tag as version
-            VERSION=${GITHUB_REF#refs/tags/}
-            APP_VERSION=${VERSION}
-            DOCKER_TAG=${VERSION}
-          else
-            # For commits, use latest tag + short SHA
-            VERSION="${LATEST_TAG}-${SHORT_SHA}"
-            APP_VERSION=${LATEST_TAG}-${SHORT_SHA}
-            DOCKER_TAG="${LATEST_TAG}-${SHORT_SHA}"
-          fi
-          
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "app_version=$APP_VERSION" >> $GITHUB_OUTPUT
-          echo "docker_tag=$DOCKER_TAG" >> $GITHUB_OUTPUT
-          echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
-
       - name: Update values.yaml
         uses: mikefarah/yq@master
         with:
           cmd: |
             yq -i '.image.tag=strenv(DOCKER_TAG)' charts/app/values.yaml
         env:
-          DOCKER_TAG: ${{ steps.vars.outputs.docker_tag }}
+          DOCKER_TAG: ${{ needs.calculate-version.outputs.docker_tag }}
 
       - name: Package Helm chart
         run: |
-          helm package charts/app --version ${{ steps.vars.outputs.version }} --app-version ${{ steps.vars.outputs.app_version }}
+          helm package charts/app --version ${{ needs.calculate-version.outputs.version }} --app-version ${{ needs.calculate-version.outputs.app_version }}
           mkdir -p chart-artifacts
-          mv controller-${{ steps.vars.outputs.version }}.tgz chart-artifacts/
+          mv controller-${{ needs.calculate-version.outputs.version }}.tgz chart-artifacts/k8s-controller-helm-chart.tgz
 
       - name: Upload Helm chart artifact
         uses: actions/upload-artifact@v4
         with:
           name: k8s-controller-helm-chart
           path: chart-artifacts/
-          retention-days: 14
+          retention-days: 7

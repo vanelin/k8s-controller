@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: bots-house/ghcr-delete-image-action@v1.1.0
         with:
-          owner: vanelin
+          owner: ${{ github.repository_owner }}
           name: k8s-controller
           token: ${{ secrets.PAT }}
           untagged-keep-latest: 2
