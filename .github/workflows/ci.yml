@@ -151,6 +151,7 @@ jobs:
           tags: ${{ env.REGISTRY }}/${{ env.REPOSITORY }}/${{ env.APP }}:${{ needs.calculate-version.outputs.docker_tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           build-args: |
             VERSION=${{ needs.calculate-version.outputs.version }}
             SERVER_PORT=8080
