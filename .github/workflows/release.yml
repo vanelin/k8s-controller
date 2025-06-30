@@ -71,7 +71,7 @@ jobs:
 
       - name: Package Helm chart
         run: |
-          helm package charts/app --version ${{ steps.version.outputs.version }} --app-version ${{ steps.version.outputs.version }}
+          helm package charts/app --version ${{ steps.version.outputs.version }} --app-version ${{ steps.version.outputs.full_tag }}
           mv controller-${{ steps.version.outputs.version }}.tgz release-files/k8s-controller-helm-chart.tgz
 
       - name: Set up QEMU
@@ -126,7 +126,9 @@ jobs:
         with:
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ghcr.io/${{ github.repository }}:${{ steps.version.outputs.version }}
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ steps.version.outputs.version }}
+            ghcr.io/${{ github.repository }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max,ignore-error=true
           github-token: ${{ secrets.GITHUB_TOKEN }}
