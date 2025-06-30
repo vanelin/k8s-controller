@@ -184,7 +184,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: image-${{ env.PLATFORM_PAIR }}
-          path: ${{ runner.temp }}/images/${{ matrix.platform }}
+          path: ${{ runner.temp }}/images/${{ env.PLATFORM_PAIR }}
           if-no-files-found: error
           retention-days: 1
 
