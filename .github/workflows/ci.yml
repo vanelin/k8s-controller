@@ -96,7 +96,7 @@ jobs:
       - name: Create compressed artifact
         run: |
           mkdir -p artifacts
-          tar -czvf artifacts/k8s-controller-${{ matrix.os }}-${{ matrix.arch }}.tar.gz -C build k8s-controller-${{ matrix.os }}-${{ matrix.arch }}
+          tar -czvf artifacts/k8s-controller-${{ matrix.os }}-${{ matrix.arch }}.tar.gz k8s-controller
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
