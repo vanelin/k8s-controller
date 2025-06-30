@@ -72,9 +72,9 @@ jobs:
           echo "docker_tag=$DOCKER_TAG" >> $GITHUB_OUTPUT
           echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
 
-  build-and-docker:
-    name: Build Binaries and Docker Images
-    runs-on: ${{ matrix.runner }}
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
     needs: calculate-version
     permissions:
       contents: read
@@ -82,18 +82,6 @@ jobs:
       security-events: write
       attestations: write
       id-token: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: linux
-            arch: amd64
-            platform: linux/amd64
-            runner: ubuntu-latest
-          - os: linux
-            arch: arm64
-            platform: linux/arm64
-            runner: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -124,27 +112,32 @@ jobs:
           make get
           make format
 
-      - name: Build binary
+      - name: Build binaries
         run: |
           mkdir -p build
-          make build TARGETOS=${{ matrix.os }} TARGETOSARCH=${{ matrix.arch }} VERSION=${{ needs.calculate-version.outputs.version }}
+          make build TARGETOS=linux TARGETOSARCH=amd64 VERSION=${{ needs.calculate-version.outputs.version }}
+          make build TARGETOS=linux TARGETOSARCH=arm64 VERSION=${{ needs.calculate-version.outputs.version }}
 
-      - name: Create compressed artifact
+      - name: Create individual artifacts
         run: |
           mkdir -p artifacts
-          tar -czvf artifacts/k8s-controller-${{ matrix.os }}-${{ matrix.arch }}.tar.gz k8s-controller
+          # Create compressed versions
+          tar -czvf artifacts/k8s-controller-linux-amd64.tar.gz -C build k8s-controller-linux-amd64
+          tar -czvf artifacts/k8s-controller-linux-arm64.tar.gz -C build k8s-controller-linux-arm64
 
-      - name: Upload binary artifact
+      - name: Upload compressed binary artifacts (amd64)
         uses: actions/upload-artifact@v4
         with:
-          name: k8s-controller-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
-          path: artifacts/k8s-controller-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
-          retention-days: 14
+          name: k8s-controller-linux-amd64.tar.gz
+          path: artifacts/k8s-controller-linux-amd64.tar.gz
+          retention-days: 7
 
-      - name: Prepare
-        run: |
-          platform=${{ matrix.platform }}
-          echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV
+      - name: Upload compressed binary artifacts (arm64)
+        uses: actions/upload-artifact@v4
+        with:
+          name: k8s-controller-linux-arm64.tar.gz
+          path: artifacts/k8s-controller-linux-arm64.tar.gz
+          retention-days: 7
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -155,18 +148,6 @@ jobs:
           driver-opts: |
             image=moby/buildkit:v0.12.0
 
-      - name: Cache Docker layers
-        uses: actions/cache@v4
-        with:
-          path: |
-            /tmp/.buildx-cache
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-buildx-${{ matrix.platform }}-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-${{ matrix.platform }}-
-            ${{ runner.os }}-buildx-
-
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
@@ -174,50 +155,23 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push by digest
-        id: build
+      - name: Build and push multi-arch Docker image
         uses: docker/build-push-action@v6
         with:
-          platforms: ${{ matrix.platform }}
+          platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.REPOSITORY }}/${{ env.APP }}:${{ needs.calculate-version.outputs.docker_tag }}-${{ env.PLATFORM_PAIR }}
-          cache-from: |
-            type=local,src=/tmp/.buildx-cache
-            type=local,src=~/.cache/go-build
-            type=local,src=~/go/pkg/mod
-          cache-to: |
-            type=local,dest=/tmp/.buildx-cache-new,mode=max
-            type=local,dest=~/.cache/go-build,mode=max
-            type=local,dest=~/go/pkg/mod,mode=max
-          outputs: type=image,push-by-digest=true,name-canonical=true,push=true
+          tags: ${{ env.REGISTRY }}/${{ env.REPOSITORY }}/${{ env.APP }}:${{ needs.calculate-version.outputs.docker_tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           build-args: |
             VERSION=${{ needs.calculate-version.outputs.version }}
             SERVER_PORT=8080
             LOGGING_LEVEL=debug
 
-      - name: Export image info
-        run: |
-          mkdir -p ${{ runner.temp }}/images
-          echo "${{ env.REGISTRY }}/${{ env.REPOSITORY }}/${{ env.APP }}:${{ needs.calculate-version.outputs.docker_tag }}-${{ env.PLATFORM_PAIR }}" > ${{ runner.temp }}/images/${{ env.PLATFORM_PAIR }}
-
-      - name: Upload image info
-        uses: actions/upload-artifact@v4
-        with:
-          name: image-${{ env.PLATFORM_PAIR }}
-          path: ${{ runner.temp }}/images/${{ env.PLATFORM_PAIR }}
-          if-no-files-found: error
-          retention-days: 1
-
-      - name: Move cache
-        run: |
-          rm -rf /tmp/.buildx-cache
-          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
-          # Keep Go cache in place as it's already in the right location
-
       - name: Trivy Scan Docker Image
         uses: aquasecurity/trivy-action@0.31.0
         with:
-          image-ref: ${{ steps.build.outputs.digest }}
+          image-ref: ${{ env.REGISTRY }}/${{ env.REPOSITORY }}/${{ env.APP }}:${{ needs.calculate-version.outputs.docker_tag }}
           format: 'sarif'
           output: 'trivy-image-results.sarif'
 
@@ -231,67 +185,10 @@ jobs:
         with:
           sarif_file: 'trivy-image-results.sarif'
 
-      - name: Export digest
-        run: |
-          mkdir -p ${{ runner.temp }}/digests
-          digest="${{ steps.build.outputs.digest }}"
-          touch "${{ runner.temp }}/digests/${digest#sha256:}"
-
-      - name: Upload digest
-        uses: actions/upload-artifact@v4
-        with:
-          name: digests-${{ env.PLATFORM_PAIR }}
-          path: ${{ runner.temp }}/digests/*
-          if-no-files-found: error
-          retention-days: 1
-
-  merge-docker:
-    name: Merge Docker Images
-    runs-on: ubuntu-latest
-    needs: [calculate-version, build-and-docker]
-    permissions:
-      contents: read
-      packages: write
-      attestations: write
-      id-token: write
-    steps:
-      - name: Download image info
-        uses: actions/download-artifact@v4
-        with:
-          path: ${{ runner.temp }}/images
-          pattern: image-*
-          merge-multiple: true
-
-      - name: Login to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Create manifest list and push
-        working-directory: ${{ runner.temp }}/images
-        run: |
-          # Read image tags from files
-          AMD64_IMAGE=$(cat linux-amd64)
-          ARM64_IMAGE=$(cat linux-arm64)
-          
-          # Create manifest list
-          docker buildx imagetools create \
-            -t ${{ env.REGISTRY }}/${{ env.REPOSITORY }}/${{ env.APP }}:${{ needs.calculate-version.outputs.docker_tag }} \
-            $AMD64_IMAGE $ARM64_IMAGE
-
-      - name: Inspect image
-        run: |
-          docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.REPOSITORY }}/${{ env.APP }}:${{ needs.calculate-version.outputs.docker_tag }}
-
   helm-package:
     name: Package Helm Chart
     runs-on: ubuntu-latest
-    needs: [calculate-version, build-and-docker, merge-docker]
+    needs: [calculate-version, build-and-test]
     permissions:
       contents: read
     steps:
@@ -319,4 +216,4 @@ jobs:
         with:
           name: k8s-controller-helm-chart
           path: chart-artifacts/
-          retention-days: 14
+          retention-days: 7

@@ -5,7 +5,9 @@ COPY . .
 ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=dev
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -v -o k8s-controller -ldflags "-X github.com/vanelin/k8s-controller.git/cmd.appVersion=$VERSION" main.go
+RUN --mount=type=cache,target=/root/.cache/go-build,optional=true \
+    --mount=type=cache,target=/go/pkg/mod,optional=true \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -v -o k8s-controller -ldflags "-X github.com/vanelin/k8s-controller.git/cmd.appVersion=$VERSION" main.go
 
 # Final stage
 FROM --platform=${TARGETPLATFORM} gcr.io/distroless/static-debian12
