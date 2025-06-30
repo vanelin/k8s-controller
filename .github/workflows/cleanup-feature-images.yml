@@ -9,6 +9,9 @@ jobs:
   delete-feature-images:
     name: Delete Feature Branch Images
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Delete images with short SHA in tag
         uses: bots-house/ghcr-delete-image-action@v1.1.0
