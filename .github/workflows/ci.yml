@@ -22,6 +22,10 @@ on:
       - 'pkg/**'
       - '.github/workflows/ci.yml'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   REGISTRY: ghcr.io
   REPOSITORY: ${{ github.repository_owner }}
