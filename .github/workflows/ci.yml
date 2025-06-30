@@ -156,18 +156,10 @@ jobs:
         if: steps.cache.outputs.cache-hit == 'true'
         run: |
           if [ -d "go-build-cache" ]; then
-            echo "=== Before permission fix ==="
-            ls -la go-build-cache/ | head -10
-            find go-build-cache -type d ! -perm 755 | head -5
-            
-            echo "=== Fixing permissions ==="
+            echo "Fixing go-build-cache permissions..."
             sudo find go-build-cache -type d -exec chmod 755 {} \;
             sudo find go-build-cache -type f -exec chmod 644 {} \;
-            
-            echo "=== After permission fix ==="
-            ls -la go-build-cache/ | head -10
-            echo "Directory count: $(find go-build-cache -type d | wc -l)"
-            echo "File count: $(find go-build-cache -type f | wc -l)"
+            echo "Cache permissions fixed. Files: $(find go-build-cache -type f | wc -l), Directories: $(find go-build-cache -type d | wc -l)"
           else
             echo "go-build-cache directory does not exist - cache miss"
           fi
