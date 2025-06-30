@@ -99,8 +99,20 @@ jobs:
           path: go-build-cache
           key: ${{ runner.os }}-go-build-cache-${{ hashFiles('**/go.sum') }}
 
+      - name: Fix cache permissions
+        if: steps.cache.outputs.cache-hit == 'true'
+        run: |
+          if [ -d "go-build-cache" ]; then
+            echo "Fixing go-build-cache permissions..."
+            sudo find go-build-cache -type d -exec chmod 755 {} \;
+            sudo find go-build-cache -type f -exec chmod 644 {} \;
+            echo "Cache permissions fixed. Files: $(find go-build-cache -type f | wc -l), Directories: $(find go-build-cache -type d | wc -l)"
+          else
+            echo "go-build-cache directory does not exist - cache miss"
+          fi
+
       - name: Inject go-build-cache
-        uses: reproducible-containers/buildkit-cache-dance@v3
+        uses: reproducible-containers/buildkit-cache-dance@v3.3.0
         with:
           builder: ${{ steps.setup-buildx.outputs.name }}
           cache-map: |
