@@ -342,6 +342,7 @@ make dev-server
 ### Build Commands
 - `make build` - Build the application
 - `make build-linux` - Build for Linux (amd64, arm64)
+- `version-info` - Show version information"
 - `make clean` - Clean build artifacts
 - `make clean-all` - Clean build artifacts and Docker images
 

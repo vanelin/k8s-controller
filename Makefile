@@ -11,9 +11,27 @@ REGISTRY ?=ghcr.io
 REPOSITORY ?=vanelin
 TARGETOS ?=linux
 TARGETARCH ?=arm64
-VERSION ?=$(shell git describe --tags --always --dirty)
 SERVER_PORT ?=8080
 LOGGING_LEVEL ?=debug
+
+# Version calculation (matching CI workflow logic)
+LATEST_TAG := $(shell git describe --tags --abbrev=0 2>/dev/null || echo "0.1.0")
+SHORT_SHA := $(shell git rev-parse --short HEAD)
+RAW_TAG := $(shell git describe --tags --exact-match 2>/dev/null || echo "")
+LATEST_TAG_CLEAN := $(subst v,,$(LATEST_TAG))
+
+# Version logic matching CI workflow
+ifeq ($(RAW_TAG),)
+    # For commits, use latest tag + short SHA (remove "v" prefix from tag)
+    VERSION ?=$(LATEST_TAG_CLEAN)-$(SHORT_SHA)
+    APP_VERSION ?=$(LATEST_TAG)-$(SHORT_SHA)
+    DOCKER_TAG ?=$(VERSION)
+else
+    # If this is a tag, use the tag as version (remove "v" prefix)
+    VERSION ?=$(subst v,,$(RAW_TAG))
+    APP_VERSION ?=$(RAW_TAG)
+    DOCKER_TAG ?=$(VERSION)
+endif
 
 # Go related variables
 GOCMD=go
@@ -25,9 +43,9 @@ GOMOD=$(GOCMD) mod
 GOFMT=$(GOCMD) fmt
 
 # Build flags
-BUILD_FLAGS = -v -o $(APP) -ldflags "-X github.com/vanelin/$(APP).git/cmd.appVersion=$(VERSION) -X github.com/vanelin/$(APP).git/cmd.buildTime=$(shell date -u '+%Y-%m-%d_%H:%M:%S')"
+BUILD_FLAGS = -v -o $(APP) -ldflags "-X github.com/vanelin/$(APP).git/cmd.appVersion=$(APP_VERSION) -X github.com/vanelin/$(APP).git/cmd.buildTime=$(shell date -u '+%Y-%m-%d_%H:%M:%S')"
 
-.PHONY: all build build-linux clean test test-coverage format get lint server server-debug server-trace list list-namespace check-env dev-server dev docker-build docker-build-multi docker-clean clean-all push help vulncheck
+.PHONY: all build build-linux clean test test-coverage format get lint server server-debug server-trace list list-namespace check-env dev-server dev docker-build docker-build-multi docker-clean clean-all push help vulncheck version-info
 
 # Default target
 all: clean build
@@ -46,13 +64,13 @@ get:
 
 # Build the application
 build: format get
-	@echo "Building $(BINARY_NAME) for $(TARGETOS)/$(TARGETARCH)..."
+	@echo "Building $(BINARY_NAME) for $(TARGETOS)/$(TARGETARCH) with version $(VERSION)..."
 	CGO_ENABLED=0 GOOS=$(TARGETOS) GOARCH=$(TARGETARCH) $(GOBUILD) $(BUILD_FLAGS) $(MAIN_PATH)
 	@echo "Build completed: $(BINARY_NAME)"
 
 # Build for different platforms
 build-linux:
-	@echo "Building for Linux..."
+	@echo "Building for Linux with version $(VERSION)..."
 	mkdir -p $(BUILD_DIR)
 	$(MAKE) build TARGETOS=linux TARGETARCH=amd64
 	mv $(BINARY_NAME) $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64
@@ -157,7 +175,7 @@ prod: clean get test build
 
 # Docker build for single architecture
 docker-build:
-	@echo "Building Docker image for $(TARGETOS)/$(TARGETARCH)..."
+	@echo "Building Docker image for $(TARGETOS)/$(TARGETARCH) with version $(DOCKER_TAG)..."
 	docker buildx build \
 		--platform $(TARGETOS)/$(TARGETARCH) \
 		--build-arg VERSION=$(VERSION) \
@@ -166,30 +184,40 @@ docker-build:
 		--build-arg SERVER_PORT=$(SERVER_PORT) \
 		--build-arg LOGGING_LEVEL=$(LOGGING_LEVEL) \
 		--load \
-		-t $(REGISTRY)/$(REPOSITORY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETARCH) \
+		-t $(REGISTRY)/$(REPOSITORY)/$(APP):$(DOCKER_TAG)-$(TARGETOS)-$(TARGETARCH) \
 		-t $(REGISTRY)/$(REPOSITORY)/$(APP):latest-$(TARGETOS)-$(TARGETARCH) \
 		.
-	@echo "Docker image built: $(REGISTRY)/$(REPOSITORY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETARCH)"
+	@echo "Docker image built: $(REGISTRY)/$(REPOSITORY)/$(APP):$(DOCKER_TAG)-$(TARGETOS)-$(TARGETARCH)"
 
 # Multi-arch Docker build (creates manifest automatically)
 docker-build-multi:
-	@echo "Building multi-arch Docker image..."
+	@echo "Building multi-arch Docker image with version $(DOCKER_TAG)..."
 	docker buildx build \
 		--platform linux/amd64,linux/arm64 \
 		--build-arg VERSION=$(VERSION) \
 		--build-arg SERVER_PORT=$(SERVER_PORT) \
 		--build-arg LOGGING_LEVEL=$(LOGGING_LEVEL) \
+		--provenance=false \
 		--push \
-		-t $(REGISTRY)/$(REPOSITORY)/$(APP):$(VERSION) \
+		-t $(REGISTRY)/$(REPOSITORY)/$(APP):$(DOCKER_TAG) \
 		-t $(REGISTRY)/$(REPOSITORY)/$(APP):latest \
 		.
-	@echo "Multi-arch Docker image built and pushed: $(REGISTRY)/$(REPOSITORY)/$(APP):$(VERSION)"
+	@echo "Multi-arch Docker image built and pushed: $(REGISTRY)/$(REPOSITORY)/$(APP):$(DOCKER_TAG)"
 
 # Push Docker image
 push:
 	@echo "Pushing Docker image..."
-	docker push $(REGISTRY)/$(REPOSITORY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETARCH)
+	docker push $(REGISTRY)/$(REPOSITORY)/$(APP):$(DOCKER_TAG)-$(TARGETOS)-$(TARGETARCH)
 	docker push $(REGISTRY)/$(REPOSITORY)/$(APP):latest-$(TARGETOS)-$(TARGETARCH)
+
+# Show version info
+version-info:
+	@echo "Version Information:"
+	@echo "  Latest Tag: $(LATEST_TAG)"
+	@echo "  Short SHA: $(SHORT_SHA)"
+	@echo "  Version: $(VERSION)"
+	@echo "  App Version: $(APP_VERSION)"
+	@echo "  Docker Tag: $(DOCKER_TAG)"
 
 # Show help
 help:
@@ -227,6 +255,7 @@ help:
 	@echo "  dev            - Development workflow (check-env, get, format, lint, test, build)"
 	@echo "  dev-server     - Server development workflow (check-env, get, format, lint, test, server)"
 	@echo "  prod           - Production build (clean, get, test, build)"
+	@echo "  version-info   - Show version information"
 	@echo ""
 	@echo "Docker commands:"
 	@echo "  docker-build   - Build single-arch Docker image"

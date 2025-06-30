@@ -152,6 +152,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max,ignore-error=true
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          provenance: false
           build-args: |
             VERSION=${{ needs.calculate-version.outputs.version }}
             SERVER_PORT=8080
