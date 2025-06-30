@@ -144,6 +144,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Go Build Cache for Docker
+        uses: actions/cache@v4
+        id: cache
+        with:
+          path: go-build-cache
+          key: ${{ runner.os }}-go-build-cache-${{ hashFiles('**/go.sum') }}
+
+      - name: Inject go-build-cache
+        uses: reproducible-containers/buildkit-cache-dance@v3
+        with:
+          cache-map: |
+            go-build-cache:/root/.cache/go-build
+          skip-extraction: ${{ steps.cache.outputs.cache-hit }}
+
       - name: Build and push multi-arch Docker image
         uses: docker/build-push-action@v6
         with:
