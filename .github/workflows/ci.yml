@@ -132,6 +132,7 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        id: setup-buildx
         with:
           version: latest
           driver-opts: |
@@ -154,8 +155,11 @@ jobs:
       - name: Inject go-build-cache
         uses: reproducible-containers/buildkit-cache-dance@v3
         with:
+          builder: ${{ steps.setup-buildx.outputs.name }}
           cache-map: |
-            go-build-cache:/root/.cache/go-build
+            {
+              "go-build-cache": "/root/.cache/go-build"
+            }
           skip-extraction: ${{ steps.cache.outputs.cache-hit }}
 
       - name: Build and push multi-arch Docker image
