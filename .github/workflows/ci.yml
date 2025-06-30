@@ -152,6 +152,13 @@ jobs:
           path: go-build-cache
           key: ${{ runner.os }}-go-build-cache-${{ hashFiles('**/go.sum') }}
 
+      - name: Fix cache permissions
+        if: steps.cache.outputs.cache-hit == 'true'
+        run: |
+          if [ -d "go-build-cache" ]; then  
+            sudo chown -R $(id -u):$(id -g) go-build-cache
+          fi
+
       - name: Inject go-build-cache
         uses: reproducible-containers/buildkit-cache-dance@v3.3.0
         with:
