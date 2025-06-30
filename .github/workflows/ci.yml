@@ -79,15 +79,17 @@ jobs:
           SHORT_SHA=$(git rev-parse --short HEAD)
           
           if [[ $GITHUB_REF == refs/tags/* ]]; then
-            # If this is a tag push, use the tag as version
-            VERSION=${GITHUB_REF#refs/tags/}
-            APP_VERSION=${VERSION}
+            # If this is a tag push, use the tag as version (remove "v" prefix)
+            RAW_TAG=${GITHUB_REF#refs/tags/}
+            VERSION=${RAW_TAG#v}
+            APP_VERSION=${RAW_TAG}
             DOCKER_TAG=${VERSION}
           else
-            # For commits, use latest tag + short SHA
-            VERSION="${LATEST_TAG}-${SHORT_SHA}"
+            # For commits, use latest tag + short SHA (remove "v" prefix from tag)
+            LATEST_TAG_CLEAN=${LATEST_TAG#v}
+            VERSION="${LATEST_TAG_CLEAN}-${SHORT_SHA}"
             APP_VERSION="${LATEST_TAG}-${SHORT_SHA}"
-            DOCKER_TAG="${LATEST_TAG}-${SHORT_SHA}"
+            DOCKER_TAG="${VERSION}"
           fi
           
           echo "version=$VERSION" >> $GITHUB_OUTPUT
@@ -139,8 +141,6 @@ jobs:
         uses: docker/metadata-action@v4
         with:
           images: ${{ env.REGISTRY }}/${{ env.REPOSITORY }}/${{ env.APP }}
-          flavor: |
-            latest=true
           tags: |
             type=ref,event=branch
             type=ref,event=pr
@@ -181,23 +181,21 @@ jobs:
             type=local,dest=/tmp/.buildx-cache-new,mode=max
             type=local,dest=~/.cache/go-build,mode=max
             type=local,dest=~/go/pkg/mod,mode=max
-          outputs: type=image,push-by-digest=true,name-canonical=true,push=true
           build-args: |
             VERSION=${{ steps.vars.outputs.version }}
             SERVER_PORT=8080
             LOGGING_LEVEL=debug
 
-      - name: Export digest
+      - name: Export image info
         run: |
-          mkdir -p ${{ runner.temp }}/digests
-          digest="${{ steps.build.outputs.digest }}"
-          touch "${{ runner.temp }}/digests/${digest#sha256:}"
+          mkdir -p ${{ runner.temp }}/images
+          echo "${{ env.REGISTRY }}/${{ env.REPOSITORY }}/${{ env.APP }}:${{ steps.vars.outputs.docker_tag }}-${{ matrix.platform }}" > ${{ runner.temp }}/images/${{ matrix.platform }}
 
-      - name: Upload digest
+      - name: Upload image info
         uses: actions/upload-artifact@v4
         with:
-          name: digests-${{ env.PLATFORM_PAIR }}
-          path: ${{ runner.temp }}/digests/*
+          name: image-${{ env.PLATFORM_PAIR }}
+          path: ${{ runner.temp }}/images/${{ matrix.platform }}
           if-no-files-found: error
           retention-days: 1
 
@@ -224,6 +222,20 @@ jobs:
         with:
           sarif_file: 'trivy-image-results.sarif'
 
+      - name: Export digest
+        run: |
+          mkdir -p ${{ runner.temp }}/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "${{ runner.temp }}/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ env.PLATFORM_PAIR }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
   merge-docker:
     name: Merge Docker Images
     runs-on: ubuntu-latest
@@ -235,35 +247,11 @@ jobs:
       attestations: write
       id-token: write
     steps:
-      - name: Set version
-        id: vars
-        run: |
-          # Get the latest tag or use 0.1.0 as default
-          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "0.1.0")
-          SHORT_SHA=$(git rev-parse --short HEAD)
-          
-          if [[ $GITHUB_REF == refs/tags/* ]]; then
-            # If this is a tag push, use the tag as version
-            VERSION=${GITHUB_REF#refs/tags/}
-            APP_VERSION=${VERSION}
-            DOCKER_TAG=${VERSION}
-          else
-            # For commits, use latest tag + short SHA
-            VERSION="${LATEST_TAG}-${SHORT_SHA}"
-            APP_VERSION=${SHORT_SHA}
-            DOCKER_TAG="${LATEST_TAG}-${SHORT_SHA}"
-          fi
-          
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "app_version=$APP_VERSION" >> $GITHUB_OUTPUT
-          echo "docker_tag=$DOCKER_TAG" >> $GITHUB_OUTPUT
-          echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
-
       - name: Download digests
         uses: actions/download-artifact@v4
         with:
           path: ${{ runner.temp }}/digests
-          pattern: digests-linux-*
+          pattern: digests-*
           merge-multiple: true
 
       - name: Login to GHCR
@@ -281,7 +269,6 @@ jobs:
         run: |
           docker buildx imagetools create \
             -t ${{ env.REGISTRY }}/${{ env.REPOSITORY }}/${{ env.APP }}:${{ steps.vars.outputs.docker_tag }} \
-            -t ${{ env.REGISTRY }}/${{ env.REPOSITORY }}/${{ env.APP }}:latest \
             $(printf '${{ env.REGISTRY }}/${{ env.REPOSITORY }}/${{ env.APP }}@sha256:%s ' *)
 
       - name: Inspect image
@@ -308,15 +295,17 @@ jobs:
           SHORT_SHA=$(git rev-parse --short HEAD)
           
           if [[ $GITHUB_REF == refs/tags/* ]]; then
-            # If this is a tag push, use the tag as version
-            VERSION=${GITHUB_REF#refs/tags/}
-            APP_VERSION=${VERSION}
+            # If this is a tag push, use the tag as version (remove "v" prefix)
+            RAW_TAG=${GITHUB_REF#refs/tags/}
+            VERSION=${RAW_TAG#v}
+            APP_VERSION=${RAW_TAG}
             DOCKER_TAG=${VERSION}
           else
-            # For commits, use latest tag + short SHA
-            VERSION="${LATEST_TAG}-${SHORT_SHA}"
+            # For commits, use latest tag + short SHA (remove "v" prefix from tag)
+            LATEST_TAG_CLEAN=${LATEST_TAG#v}
+            VERSION="${LATEST_TAG_CLEAN}-${SHORT_SHA}"
             APP_VERSION="${LATEST_TAG}-${SHORT_SHA}"
-            DOCKER_TAG="${LATEST_TAG}-${SHORT_SHA}"
+            DOCKER_TAG="${VERSION}"
           fi
           
           echo "version=$VERSION" >> $GITHUB_OUTPUT
@@ -334,14 +323,9 @@ jobs:
 
       - name: Package Helm chart
         run: |
-          # Remove "v" prefix from version for Chart.yaml version field
-          HELM_VERSION=${VERSION#v}
-          # Keep "v" prefix for appVersion
-          HELM_APP_VERSION=$APP_VERSION
-          
-          helm package charts/app --version $HELM_VERSION --app-version $HELM_APP_VERSION
+          helm package charts/app --version ${{ steps.vars.outputs.version }} --app-version ${{ steps.vars.outputs.app_version }}
           mkdir -p chart-artifacts
-          mv controller-$HELM_VERSION.tgz chart-artifacts/k8s-controller-helm-chart.tgz
+          mv controller-${{ steps.vars.outputs.version }}.tgz chart-artifacts/k8s-controller-helm-chart.tgz
 
       - name: Upload Helm chart artifact
         uses: actions/upload-artifact@v4
