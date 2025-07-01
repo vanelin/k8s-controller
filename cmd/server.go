@@ -1,19 +1,31 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/valyala/fasthttp"
+	appsv1 "k8s.io/api/apps/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 var serverPort string
+var serverKubeconfig string
+var serverInCluster bool
+var serverNamespace string
 
 var serverCmd = &cobra.Command{
 	Use:   "server",
-	Short: "Start a FastHTTP server",
+	Short: "Start a FastHTTP server with Deployment informer",
 	Run: func(cmd *cobra.Command, args []string) {
 		// Use the already loaded configuration from root.go
 		cfg := appConfig
@@ -28,6 +40,28 @@ var serverCmd = &cobra.Command{
 
 		// Print updated configuration
 		cfg.PrintConfig()
+
+		// Start Deployment informer if Kubernetes flags are provided
+		if serverKubeconfig != "" || serverInCluster {
+			// Use default namespace if not specified
+			namespace := serverNamespace
+			if namespace == "" {
+				namespace = "default"
+			}
+
+			// Create Kubernetes client
+			clientset, err := getServerKubeClient(serverKubeconfig, serverInCluster)
+			if err != nil {
+				log.Error().Err(err).Msg("Failed to create Kubernetes client")
+				os.Exit(1)
+			}
+
+			// Start Deployment informer in background
+			ctx := context.Background()
+			go startDeploymentInformer(ctx, clientset, namespace)
+		} else {
+			log.Info().Msg("Skipping Deployment informer - no Kubernetes configuration provided")
+		}
 
 		// Determine port with proper formatting - add colon for FastHTTP
 		port := cfg.Port
@@ -48,7 +82,89 @@ var serverCmd = &cobra.Command{
 	},
 }
 
+func getServerKubeClient(kubeconfigPath string, inCluster bool) (*kubernetes.Clientset, error) {
+	var config *rest.Config
+	var err error
+	if inCluster {
+		config, err = rest.InClusterConfig()
+	} else {
+		config, err = clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return kubernetes.NewForConfig(config)
+}
+
+// startDeploymentInformer starts a shared informer for Deployments in the specified namespace
+func startDeploymentInformer(ctx context.Context, clientset *kubernetes.Clientset, namespace string) {
+	// Create informer for Deployments in the specified namespace
+	deploymentInformer := cache.NewSharedIndexInformer(
+		&cache.ListWatch{
+			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+				return clientset.AppsV1().Deployments(namespace).List(ctx, options)
+			},
+			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+				return clientset.AppsV1().Deployments(namespace).Watch(ctx, options)
+			},
+		},
+		&appsv1.Deployment{},
+		0, // resync period
+		cache.Indexers{},
+	)
+
+	// Add event handlers for add, update, and delete events
+	if _, err := deploymentInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			deployment := obj.(*appsv1.Deployment)
+			log.Info().
+				Str("event", "add").
+				Str("name", deployment.Name).
+				Str("namespace", deployment.Namespace).
+				Int32("replicas", *deployment.Spec.Replicas).
+				Msg("Deployment added")
+		},
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			oldDeployment := oldObj.(*appsv1.Deployment)
+			newDeployment := newObj.(*appsv1.Deployment)
+			log.Info().
+				Str("event", "update").
+				Str("name", newDeployment.Name).
+				Str("namespace", newDeployment.Namespace).
+				Int32("old_replicas", *oldDeployment.Spec.Replicas).
+				Int32("new_replicas", *newDeployment.Spec.Replicas).
+				Msg("Deployment updated")
+		},
+		DeleteFunc: func(obj interface{}) {
+			deployment := obj.(*appsv1.Deployment)
+			log.Info().
+				Str("event", "delete").
+				Str("name", deployment.Name).
+				Str("namespace", deployment.Namespace).
+				Msg("Deployment deleted")
+		},
+	}); err != nil {
+		log.Error().Err(err).Msg("Failed to add event handler")
+		return
+	}
+
+	// Start the informer
+	log.Info().Str("namespace", namespace).Msg("Starting Deployment informer")
+	go deploymentInformer.Run(ctx.Done())
+
+	// Wait for the informer to sync
+	if !cache.WaitForCacheSync(ctx.Done(), deploymentInformer.HasSynced) {
+		log.Error().Str("namespace", namespace).Msg("Failed to sync Deployment informer")
+		return
+	}
+
+	log.Info().Str("namespace", namespace).Msg("Deployment informer started successfully")
+}
+
 func init() {
 	rootCmd.AddCommand(serverCmd)
 	serverCmd.Flags().StringVarP(&serverPort, "port", "p", "", "Port to run the server on (overrides env vars and config, default: 8080)")
+	serverCmd.Flags().StringVar(&serverKubeconfig, "kubeconfig", "", "Path to the kubeconfig file")
+	serverCmd.Flags().BoolVar(&serverInCluster, "in-cluster", false, "Use in-cluster Kubernetes config")
+	serverCmd.Flags().StringVarP(&serverNamespace, "namespace", "n", "", "Namespace to watch for Deployments (default: default)")
 }
