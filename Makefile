@@ -71,7 +71,7 @@ $(ENVTEST): $(LOCALBIN)
 # Build flags
 BUILD_FLAGS = -v -o $(APP) -ldflags "-X github.com/vanelin/$(APP).git/cmd.appVersion=$(APP_VERSION)"
 
-.PHONY: all build build-linux clean test test-coverage test-k8s test-k8s-coverage format get lint server server-debug server-trace list list-namespace check-env dev-server dev docker-build docker-build-multi docker-clean clean-all push help vulncheck version-info envtest
+.PHONY: all build build-linux clean test test-coverage format get lint server server-debug server-trace list list-namespace check-env dev-server dev docker-build docker-build-multi docker-clean clean-all push help vulncheck version-info envtest
 
 # Default target
 all: clean build
@@ -127,27 +127,15 @@ docker-clean:
 clean-all: clean docker-clean
 	@echo "All clean completed"
 
-# Run unit tests
-test:
-	@echo "Running unit tests..."
-	$(GOTEST) -v ./...
-
-# Run unit tests with coverage
-test-coverage:
-	@echo "Running unit tests with coverage..."
-	$(GOTEST) -v -coverprofile=coverage.out ./...
-	$(GOCMD) tool cover -html=coverage.out -o coverage.html
-	@echo "Coverage report generated: coverage.html"
-
-# Run Kubernetes controller tests with envtest
-test-k8s: envtest
-	@echo "Running Kubernetes controller tests with envtest..."
+# Run all tests (unit + Kubernetes integration tests)
+test: envtest
+	@echo "Running all tests with envtest..."
 	go install gotest.tools/gotestsum@latest
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use --bin-dir $(LOCALBIN) -p path)" gotestsum --junitfile report.xml --format testname ./... ${TEST_ARGS}
 
-# Run Kubernetes controller tests with coverage
-test-k8s-coverage: envtest
-	@echo "Running Kubernetes controller tests with coverage..."
+# Run all tests with coverage
+test-coverage: envtest
+	@echo "Running all tests with coverage..."
 	go install github.com/boumenot/gocover-cobertura@latest
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use --bin-dir $(LOCALBIN) -p path)" go test -coverprofile=coverage.out -covermode=count ./...
 	go tool cover -func=coverage.out
@@ -305,10 +293,8 @@ help:
 	@echo "  make build TARGETOS=linux TARGETARCH=arm64"
 	@echo ""
 	@echo "Test commands:"
-	@echo "  test           - Run unit tests (fast, no Kubernetes API required)"
-	@echo "  test-coverage  - Run unit tests with coverage report"
-	@echo "  test-k8s       - Run Kubernetes controller tests with envtest"
-	@echo "  test-k8s-coverage - Run Kubernetes controller tests with coverage and XML output"
+	@echo "  test           - Run all tests with envtest (unit + Kubernetes integration)"
+	@echo "  test-coverage  - Run all tests with coverage report and XML output"
 	@echo "  envtest        - Download setup-envtest tool for Kubernetes testing"
 	@echo ""
 	@echo "Dependency commands:"
