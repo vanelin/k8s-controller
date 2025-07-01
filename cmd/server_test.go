@@ -87,20 +87,32 @@ func TestServerEnvironmentVariablePriority(t *testing.T) {
 	// Clean up after test
 	defer func() {
 		if originalKubeconfig != "" {
-			os.Setenv("KUBECONFIG", originalKubeconfig)
+			if err := os.Setenv("KUBECONFIG", originalKubeconfig); err != nil {
+				t.Logf("Failed to restore KUBECONFIG: %v", err)
+			}
 		} else {
-			os.Unsetenv("KUBECONFIG")
+			if err := os.Unsetenv("KUBECONFIG"); err != nil {
+				t.Logf("Failed to unset KUBECONFIG: %v", err)
+			}
 		}
 		if originalInCluster != "" {
-			os.Setenv("IN_CLUSTER", originalInCluster)
+			if err := os.Setenv("IN_CLUSTER", originalInCluster); err != nil {
+				t.Logf("Failed to restore IN_CLUSTER: %v", err)
+			}
 		} else {
-			os.Unsetenv("IN_CLUSTER")
+			if err := os.Unsetenv("IN_CLUSTER"); err != nil {
+				t.Logf("Failed to unset IN_CLUSTER: %v", err)
+			}
 		}
 	}()
 
 	// Set conflicting environment variables
-	os.Setenv("KUBECONFIG", "~/.kube/config")
-	os.Setenv("IN_CLUSTER", "true")
+	if err := os.Setenv("KUBECONFIG", "~/.kube/config"); err != nil {
+		t.Fatalf("Failed to set KUBECONFIG: %v", err)
+	}
+	if err := os.Setenv("IN_CLUSTER", "true"); err != nil {
+		t.Fatalf("Failed to set IN_CLUSTER: %v", err)
+	}
 
 	// Test that the configuration loading respects environment variables
 	// This test verifies that environment variables are properly loaded
@@ -126,34 +138,58 @@ func TestServerConfigurationPriorityLogic(t *testing.T) {
 	// Clean up after test
 	defer func() {
 		if originalKubeconfig != "" {
-			os.Setenv("KUBECONFIG", originalKubeconfig)
+			if err := os.Setenv("KUBECONFIG", originalKubeconfig); err != nil {
+				t.Logf("Failed to restore KUBECONFIG: %v", err)
+			}
 		} else {
-			os.Unsetenv("KUBECONFIG")
+			if err := os.Unsetenv("KUBECONFIG"); err != nil {
+				t.Logf("Failed to unset KUBECONFIG: %v", err)
+			}
 		}
 		if originalInCluster != "" {
-			os.Setenv("IN_CLUSTER", originalInCluster)
+			if err := os.Setenv("IN_CLUSTER", originalInCluster); err != nil {
+				t.Logf("Failed to restore IN_CLUSTER: %v", err)
+			}
 		} else {
-			os.Unsetenv("IN_CLUSTER")
+			if err := os.Unsetenv("IN_CLUSTER"); err != nil {
+				t.Logf("Failed to unset IN_CLUSTER: %v", err)
+			}
 		}
 		if originalNamespace != "" {
-			os.Setenv("NAMESPACE", originalNamespace)
+			if err := os.Setenv("NAMESPACE", originalNamespace); err != nil {
+				t.Logf("Failed to restore NAMESPACE: %v", err)
+			}
 		} else {
-			os.Unsetenv("NAMESPACE")
+			if err := os.Unsetenv("NAMESPACE"); err != nil {
+				t.Logf("Failed to unset NAMESPACE: %v", err)
+			}
 		}
 		if originalPort != "" {
-			os.Setenv("PORT", originalPort)
+			if err := os.Setenv("PORT", originalPort); err != nil {
+				t.Logf("Failed to restore PORT: %v", err)
+			}
 		} else {
-			os.Unsetenv("PORT")
+			if err := os.Unsetenv("PORT"); err != nil {
+				t.Logf("Failed to unset PORT: %v", err)
+			}
 		}
 	}()
 
 	// Test scenario: conflicting environment variables
 	// KUBECONFIG=~/.kube/config (should be ignored when IN_CLUSTER=true)
 	// IN_CLUSTER=true (should take priority)
-	os.Setenv("KUBECONFIG", "~/.kube/config")
-	os.Setenv("IN_CLUSTER", "true")
-	os.Setenv("NAMESPACE", "test-namespace")
-	os.Setenv("PORT", "9090")
+	if err := os.Setenv("KUBECONFIG", "~/.kube/config"); err != nil {
+		t.Fatalf("Failed to set KUBECONFIG: %v", err)
+	}
+	if err := os.Setenv("IN_CLUSTER", "true"); err != nil {
+		t.Fatalf("Failed to set IN_CLUSTER: %v", err)
+	}
+	if err := os.Setenv("NAMESPACE", "test-namespace"); err != nil {
+		t.Fatalf("Failed to set NAMESPACE: %v", err)
+	}
+	if err := os.Setenv("PORT", "9090"); err != nil {
+		t.Fatalf("Failed to set PORT: %v", err)
+	}
 
 	t.Log("Testing server configuration priority logic with conflicting env vars")
 
