@@ -21,6 +21,8 @@ func TestConfig_SetDefaults(t *testing.T) {
 				Port:         "8080",
 				KUBECONFIG:   "~/.kube/config",
 				LoggingLevel: "info",
+				Namespace:    "default",
+				InCluster:    false,
 			},
 		},
 		{
@@ -32,6 +34,8 @@ func TestConfig_SetDefaults(t *testing.T) {
 				Port:         "9090",
 				KUBECONFIG:   "~/.kube/config",
 				LoggingLevel: "info",
+				Namespace:    "default",
+				InCluster:    false,
 			},
 		},
 		{
@@ -40,11 +44,15 @@ func TestConfig_SetDefaults(t *testing.T) {
 				Port:         "9090",
 				KUBECONFIG:   "/custom/kube/config",
 				LoggingLevel: "debug",
+				Namespace:    "custom-namespace",
+				InCluster:    true,
 			},
 			expected: Config{
 				Port:         "9090",
 				KUBECONFIG:   "/custom/kube/config",
 				LoggingLevel: "debug",
+				Namespace:    "custom-namespace",
+				InCluster:    true,
 			},
 		},
 	}
@@ -77,6 +85,8 @@ func TestConfig_PrintConfig(t *testing.T) {
 		Port:         "8080",
 		KUBECONFIG:   "~/.kube/config",
 		LoggingLevel: "info",
+		Namespace:    "test-namespace",
+		InCluster:    false,
 	}
 
 	// This test mainly ensures PrintConfig doesn't panic
@@ -94,7 +104,9 @@ func TestLoadConfig_WithEnvFile(t *testing.T) {
 	// Create a test .env file
 	envContent := `PORT=9090
 LOGGING_LEVEL=debug
-KUBECONFIG=/test/kube/config`
+KUBECONFIG=/test/kube/config
+NAMESPACE=test-namespace
+IN_CLUSTER=true`
 
 	envFile := filepath.Join(tempDir, ".env")
 	if err := os.WriteFile(envFile, []byte(envContent), 0644); err != nil {
@@ -112,6 +124,8 @@ KUBECONFIG=/test/kube/config`
 		Port:         "9090",
 		KUBECONFIG:   "/test/kube/config",
 		LoggingLevel: "debug",
+		Namespace:    "test-namespace",
+		InCluster:    true,
 	}
 
 	if config != expected {
@@ -130,6 +144,12 @@ func TestLoadConfig_WithEnvironmentVariables(t *testing.T) {
 	if err := os.Setenv("KUBECONFIG", "/env/kube/config"); err != nil {
 		t.Fatalf("Failed to set KUBECONFIG env var: %v", err)
 	}
+	if err := os.Setenv("NAMESPACE", "env-namespace"); err != nil {
+		t.Fatalf("Failed to set NAMESPACE env var: %v", err)
+	}
+	if err := os.Setenv("IN_CLUSTER", "true"); err != nil {
+		t.Fatalf("Failed to set IN_CLUSTER env var: %v", err)
+	}
 
 	// Clean up after test
 	defer func() {
@@ -141,6 +161,12 @@ func TestLoadConfig_WithEnvironmentVariables(t *testing.T) {
 		}
 		if err := os.Unsetenv("KUBECONFIG"); err != nil {
 			t.Errorf("Failed to unset KUBECONFIG env var: %v", err)
+		}
+		if err := os.Unsetenv("NAMESPACE"); err != nil {
+			t.Errorf("Failed to unset NAMESPACE env var: %v", err)
+		}
+		if err := os.Unsetenv("IN_CLUSTER"); err != nil {
+			t.Errorf("Failed to unset IN_CLUSTER env var: %v", err)
 		}
 	}()
 
@@ -155,6 +181,8 @@ func TestLoadConfig_WithEnvironmentVariables(t *testing.T) {
 		Port:         "7070",
 		KUBECONFIG:   "/env/kube/config",
 		LoggingLevel: "warn",
+		Namespace:    "env-namespace",
+		InCluster:    true,
 	}
 
 	if config != expected {
@@ -170,6 +198,8 @@ func TestLoadConfig_WithDefaults(t *testing.T) {
 	originalPort := os.Getenv("PORT")
 	originalLoggingLevel := os.Getenv("LOGGING_LEVEL")
 	originalKubeconfig := os.Getenv("KUBECONFIG")
+	originalNamespace := os.Getenv("NAMESPACE")
+	originalInCluster := os.Getenv("IN_CLUSTER")
 
 	if err := os.Unsetenv("PORT"); err != nil {
 		t.Fatalf("Failed to unset PORT env var: %v", err)
@@ -179,6 +209,12 @@ func TestLoadConfig_WithDefaults(t *testing.T) {
 	}
 	if err := os.Unsetenv("KUBECONFIG"); err != nil {
 		t.Fatalf("Failed to unset KUBECONFIG env var: %v", err)
+	}
+	if err := os.Unsetenv("NAMESPACE"); err != nil {
+		t.Fatalf("Failed to unset NAMESPACE env var: %v", err)
+	}
+	if err := os.Unsetenv("IN_CLUSTER"); err != nil {
+		t.Fatalf("Failed to unset IN_CLUSTER env var: %v", err)
 	}
 
 	// Restore original values after test
@@ -198,6 +234,16 @@ func TestLoadConfig_WithDefaults(t *testing.T) {
 				t.Errorf("Failed to restore KUBECONFIG env var: %v", err)
 			}
 		}
+		if originalNamespace != "" {
+			if err := os.Setenv("NAMESPACE", originalNamespace); err != nil {
+				t.Errorf("Failed to restore NAMESPACE env var: %v", err)
+			}
+		}
+		if originalInCluster != "" {
+			if err := os.Setenv("IN_CLUSTER", originalInCluster); err != nil {
+				t.Errorf("Failed to restore IN_CLUSTER env var: %v", err)
+			}
+		}
 	}()
 
 	// Load config from nonexistent path (should use defaults)
@@ -215,6 +261,12 @@ func TestLoadConfig_WithDefaults(t *testing.T) {
 	}
 	if config.LoggingLevel != "info" {
 		t.Errorf("Expected default LOGGING_LEVEL=info, got %s", config.LoggingLevel)
+	}
+	if config.Namespace != "default" {
+		t.Errorf("Expected default NAMESPACE=default, got %s", config.Namespace)
+	}
+	if config.InCluster != false {
+		t.Errorf("Expected default IN_CLUSTER=false, got %t", config.InCluster)
 	}
 }
 
@@ -243,5 +295,11 @@ func TestLoadConfig_EmptyEnvFile(t *testing.T) {
 	}
 	if config.LoggingLevel != "info" {
 		t.Errorf("Expected default LOGGING_LEVEL=info, got %s", config.LoggingLevel)
+	}
+	if config.Namespace != "default" {
+		t.Errorf("Expected default NAMESPACE=default, got %s", config.Namespace)
+	}
+	if config.InCluster != false {
+		t.Errorf("Expected default IN_CLUSTER=false, got %t", config.InCluster)
 	}
 }

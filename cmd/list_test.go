@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/vanelin/k8s-controller.git/pkg/common/utils"
 )
 
 // setEnvSafely sets an environment variable and logs any error
@@ -141,9 +143,9 @@ func TestExpandTilde(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := expandTilde(tt.input)
+			result := utils.ExpandTilde(tt.input)
 			if result != tt.expected {
-				t.Errorf("expandTilde(%q) = %v, want %v", tt.input, result, tt.expected)
+				t.Errorf("utils.ExpandTilde(%q) = %v, want %v", tt.input, result, tt.expected)
 			}
 		})
 	}

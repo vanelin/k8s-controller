@@ -8,6 +8,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/valyala/fasthttp"
+	"github.com/vanelin/k8s-controller.git/pkg/common/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -42,19 +43,42 @@ var serverCmd = &cobra.Command{
 		cfg.PrintConfig()
 
 		// Start Deployment informer if Kubernetes flags are provided
-		if serverKubeconfig != "" || serverInCluster {
-			// Use default namespace if not specified
-			namespace := serverNamespace
-			if namespace == "" {
-				namespace = "default"
-			}
+		// Priority: CLI flags > env vars > .env file > defaults
+		kubeconfig := serverKubeconfig
+		if kubeconfig == "" {
+			kubeconfig = appConfig.KUBECONFIG
+		}
+		// Expand tilde in kubeconfig path
+		kubeconfig = utils.ExpandTilde(kubeconfig)
 
+		inCluster := serverInCluster
+		if !inCluster {
+			inCluster = appConfig.InCluster
+		}
+
+		namespace := serverNamespace
+		if namespace == "" {
+			namespace = appConfig.Namespace
+		}
+
+		if kubeconfig != "" || inCluster {
 			// Create Kubernetes client
-			clientset, err := getServerKubeClient(serverKubeconfig, serverInCluster)
+			clientset, err := getServerKubeClient(kubeconfig, inCluster)
 			if err != nil {
 				log.Error().Err(err).Msg("Failed to create Kubernetes client")
 				os.Exit(1)
 			}
+
+			// Check if namespace exists before starting informer
+			originalNamespace := namespace
+			result := utils.CheckNamespace(context.Background(), clientset, namespace)
+			if !result.Exists {
+				log.Warn().Err(result.Error).Str("namespace", namespace).Msg("Namespace does not exist, using default namespace")
+				namespace = "default"
+				log.Info().Str("original_namespace", originalNamespace).Str("fallback_namespace", namespace).Msg("Switched to default namespace")
+			}
+
+			log.Info().Str("namespace", namespace).Msg("Starting Deployment informer")
 
 			// Start Deployment informer in background
 			ctx := context.Background()
@@ -74,7 +98,7 @@ var serverCmd = &cobra.Command{
 				log.Error().Err(err).Msg("Failed to write response")
 			}
 		}
-		log.Info().Msgf("Starting FastHTTP server on %s (version: %s, build time: %s)", port, appVersion, buildTime)
+		log.Info().Msgf("Starting FastHTTP server on %s (version: %s)", port, appVersion)
 		if err := fasthttp.ListenAndServe(port, handler); err != nil {
 			log.Error().Err(err).Msg("Error starting FastHTTP server")
 			os.Exit(1)
