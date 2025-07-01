@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"sync"
+	"syscall"
 
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
@@ -28,6 +31,13 @@ var serverCmd = &cobra.Command{
 	Use:   "server",
 	Short: "Start a FastHTTP server with Deployment informer",
 	Run: func(cmd *cobra.Command, args []string) {
+		// Create context with cancel for graceful shutdown
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// Create WaitGroup to track goroutines
+		var wg sync.WaitGroup
+
 		// Use the already loaded configuration from root.go
 		cfg := appConfig
 
@@ -78,11 +88,12 @@ var serverCmd = &cobra.Command{
 				log.Info().Str("original_namespace", originalNamespace).Str("fallback_namespace", namespace).Msg("Switched to default namespace")
 			}
 
-			log.Info().Str("namespace", namespace).Msg("Starting Deployment informer")
-
-			// Start Deployment informer in background
-			ctx := context.Background()
-			go startDeploymentInformer(ctx, clientset, namespace)
+			// Start Deployment informer in background with WaitGroup
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				startDeploymentInformer(ctx, clientset, namespace)
+			}()
 		} else {
 			log.Info().Msg("Skipping Deployment informer - no Kubernetes configuration provided")
 		}
@@ -93,16 +104,52 @@ var serverCmd = &cobra.Command{
 			port = ":" + port
 		}
 
-		handler := func(ctx *fasthttp.RequestCtx) {
-			if _, err := fmt.Fprintf(ctx, "Hello from FastHTTP!"); err != nil {
-				log.Error().Err(err).Msg("Failed to write response")
+		// Create HTTP server with graceful shutdown
+		server := &fasthttp.Server{
+			Handler: func(ctx *fasthttp.RequestCtx) {
+				if _, err := fmt.Fprintf(ctx, "Hello from FastHTTP!"); err != nil {
+					log.Error().Err(err).Msg("Failed to write response")
+				}
+			},
+		}
+
+		// Start HTTP server in background
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			log.Info().Msgf("Starting FastHTTP server on %s (version: %s)", port, appVersion)
+			if err := server.ListenAndServe(port); err != nil {
+				log.Error().Err(err).Msg("Error starting FastHTTP server")
+				cancel() // Signal other goroutines to stop
 			}
+		}()
+
+		// Setup signal handling for graceful shutdown
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
+
+		// Wait for shutdown signal
+		select {
+		case sig := <-sigChan:
+			log.Info().Str("signal", sig.String()).Msg("Received shutdown signal, starting graceful shutdown")
+		case <-ctx.Done():
+			log.Info().Msg("Context cancelled, starting graceful shutdown")
 		}
-		log.Info().Msgf("Starting FastHTTP server on %s (version: %s)", port, appVersion)
-		if err := fasthttp.ListenAndServe(port, handler); err != nil {
-			log.Error().Err(err).Msg("Error starting FastHTTP server")
-			os.Exit(1)
+
+		// Graceful shutdown
+		log.Info().Msg("Shutting down HTTP server...")
+		if err := server.Shutdown(); err != nil {
+			log.Error().Err(err).Msg("Error shutting down HTTP server")
 		}
+
+		// Cancel context to stop informer
+		cancel()
+
+		// Wait for all goroutines to finish
+		log.Info().Msg("Waiting for goroutines to finish...")
+		wg.Wait()
+
+		log.Info().Msg("Graceful shutdown completed")
 	},
 }
 
@@ -122,8 +169,10 @@ func getServerKubeClient(kubeconfigPath string, inCluster bool) (*kubernetes.Cli
 
 // startDeploymentInformer starts a shared informer for Deployments in the specified namespace
 func startDeploymentInformer(ctx context.Context, clientset *kubernetes.Clientset, namespace string) {
-	// Create informer for Deployments in the specified namespace
-	deploymentInformer := cache.NewSharedIndexInformer(
+	log.Info().Str("namespace", namespace).Msg("Starting Deployment informer")
+
+	// Create informer factory
+	informerFactory := cache.NewSharedIndexInformer(
 		&cache.ListWatch{
 			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 				return clientset.AppsV1().Deployments(namespace).List(ctx, options)
@@ -137,52 +186,71 @@ func startDeploymentInformer(ctx context.Context, clientset *kubernetes.Clientse
 		cache.Indexers{},
 	)
 
-	// Add event handlers for add, update, and delete events
-	if _, err := deploymentInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	// Add event handlers
+	_, err := informerFactory.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			deployment := obj.(*appsv1.Deployment)
 			log.Info().
-				Str("event", "add").
-				Str("name", deployment.Name).
+				Str("event", "ADDED").
 				Str("namespace", deployment.Namespace).
+				Str("name", deployment.Name).
 				Int32("replicas", *deployment.Spec.Replicas).
 				Msg("Deployment added")
 		},
 		UpdateFunc: func(oldObj, newObj interface{}) {
 			oldDeployment := oldObj.(*appsv1.Deployment)
 			newDeployment := newObj.(*appsv1.Deployment)
+
+			// Determine what type of change occurred
+			var changeType string
+			if *oldDeployment.Spec.Replicas != *newDeployment.Spec.Replicas {
+				changeType = "spec_replicas"
+			} else if oldDeployment.Status.Replicas != newDeployment.Status.Replicas {
+				changeType = "status_replicas"
+			} else if oldDeployment.Status.ReadyReplicas != newDeployment.Status.ReadyReplicas {
+				changeType = "ready_replicas"
+			} else if oldDeployment.Status.AvailableReplicas != newDeployment.Status.AvailableReplicas {
+				changeType = "available_replicas"
+			} else {
+				changeType = "status_only"
+			}
+
 			log.Info().
-				Str("event", "update").
-				Str("name", newDeployment.Name).
+				Str("event", "MODIFIED").
 				Str("namespace", newDeployment.Namespace).
-				Int32("old_replicas", *oldDeployment.Spec.Replicas).
-				Int32("new_replicas", *newDeployment.Spec.Replicas).
+				Str("name", newDeployment.Name).
+				Int32("replicas", *newDeployment.Spec.Replicas).
+				Str("change", changeType).
 				Msg("Deployment updated")
 		},
 		DeleteFunc: func(obj interface{}) {
 			deployment := obj.(*appsv1.Deployment)
 			log.Info().
-				Str("event", "delete").
-				Str("name", deployment.Name).
+				Str("event", "DELETED").
 				Str("namespace", deployment.Namespace).
+				Str("name", deployment.Name).
 				Msg("Deployment deleted")
 		},
-	}); err != nil {
-		log.Error().Err(err).Msg("Failed to add event handler")
+	})
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to add event handlers to informer")
 		return
 	}
 
 	// Start the informer
-	log.Info().Str("namespace", namespace).Msg("Starting Deployment informer")
-	go deploymentInformer.Run(ctx.Done())
+	go informerFactory.Run(ctx.Done())
 
 	// Wait for the informer to sync
-	if !cache.WaitForCacheSync(ctx.Done(), deploymentInformer.HasSynced) {
-		log.Error().Str("namespace", namespace).Msg("Failed to sync Deployment informer")
+	if !cache.WaitForCacheSync(ctx.Done(), informerFactory.HasSynced) {
+		log.Error().Msg("Failed to sync informer cache")
 		return
 	}
 
-	log.Info().Str("namespace", namespace).Msg("Deployment informer started successfully")
+	log.Info().Msg("Deployment informer started successfully")
+
+	// Wait for context cancellation
+	<-ctx.Done()
+	log.Info().Msg("Deployment informer shutting down")
 }
 
 func init() {
