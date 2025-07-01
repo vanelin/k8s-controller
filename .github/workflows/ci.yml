@@ -128,13 +128,13 @@ jobs:
           go-version: '1.24.4'
           cache: true
 
-      - name: Run tests
-        run: make test
-
       - name: Get dependencies and format code
         run: |
           make get
           make format
+
+      - name: Run tests
+        run: make test
 
       - name: Build binaries
         run: |

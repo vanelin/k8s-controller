@@ -48,6 +48,9 @@ jobs:
           tar -czvf release-files/k8s-controller-linux-amd64.tar.gz build/k8s-controller-linux-amd64
           tar -czvf release-files/k8s-controller-linux-arm64.tar.gz build/k8s-controller-linux-arm64
 
+      - name: Run tests
+        run: make test
+
       - name: Update Helm chart version
         uses: mikefarah/yq@master
         with:
