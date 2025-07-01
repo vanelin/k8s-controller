@@ -18,7 +18,9 @@ jobs:
     env:
       SERVER_PORT: 8080
       LOGGING_LEVEL: info
-      KUBECONFIG: ~.kube/config
+      KUBECONFIG: ~/.kube/config
+      NAMESPACE: default
+      IN_CLUSTER: false
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -138,6 +140,8 @@ jobs:
             SERVER_PORT=${{ env.SERVER_PORT }}
             LOGGING_LEVEL=${{ env.LOGGING_LEVEL }}
             KUBECONFIG=${{ env.KUBECONFIG }}
+            NAMESPACE=${{ env.NAMESPACE }}
+            IN_CLUSTER=${{ env.IN_CLUSTER }}
 
       - name: Extract changelog for this version
         id: changelog

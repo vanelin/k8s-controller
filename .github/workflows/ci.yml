@@ -30,6 +30,11 @@ env:
   REGISTRY: ghcr.io
   REPOSITORY: ${{ github.repository_owner }}
   APP: k8s-controller
+  SERVER_PORT: 8080
+  LOGGING_LEVEL: debug
+  KUBECONFIG: ~/.kube/config
+  NAMESPACE: default
+  IN_CLUSTER: false
 
 jobs:
   codeql:
@@ -215,8 +220,11 @@ jobs:
           provenance: false
           build-args: |
             VERSION=${{ needs.calculate-version.outputs.version }}
-            SERVER_PORT=8080
-            LOGGING_LEVEL=debug
+            SERVER_PORT=${{ env.SERVER_PORT }}
+            LOGGING_LEVEL=${{ env.LOGGING_LEVEL }}
+            KUBECONFIG=${{ env.KUBECONFIG }}
+            NAMESPACE=${{ env.NAMESPACE }}
+            IN_CLUSTER=${{ env.IN_CLUSTER }}
 
       - name: Trivy Scan Docker Image
         uses: aquasecurity/trivy-action@0.31.0
