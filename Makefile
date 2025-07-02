@@ -9,7 +9,6 @@ APP=$(shell basename $(shell git remote get-url origin) |cut -d '.' -f1)
 REGISTRY ?=ghcr.io
 REPOSITORY ?=vanelin
 TARGETOS ?=linux
-TARGETARCH ?=arm64
 
 # Viper envs
 CONFIG_PATH=pkg/common/envs/.env
@@ -18,6 +17,16 @@ LOGGING_LEVEL ?=debug
 KUBECONFIG ?=~/.kube/config
 IN_CLUSTER ?=false
 NAMESPACE ?=default
+
+# Detect system architecture
+ARCH := $(shell uname -m)
+ifeq ($(ARCH),x86_64)
+    TARGETARCH ?= amd64
+else ifeq ($(ARCH),aarch64)
+    TARGETARCH ?= arm64
+else
+    TARGETARCH ?= amd64
+endif
 
 # envtest
 ENVTEST ?= $(LOCALBIN)/setup-envtest
@@ -66,12 +75,17 @@ ENVTEST_VERSION ?= release-0.19
 envtest: $(ENVTEST) ## Download setup-envtest locally if necessary.
 $(ENVTEST): $(LOCALBIN)
 	$(call go-install-tool,$(ENVTEST),sigs.k8s.io/controller-runtime/tools/setup-envtest,$(ENVTEST_VERSION))
+	@echo "Detected architecture: $(ARCH) -> Using envtest arch: $(TARGETARCH)"
+	@echo "Installing envtest binaries for $(TARGETARCH)..."
+	@$(ENVTEST) use --arch $(TARGETARCH) --bin-dir $(LOCALBIN) -p path > /dev/null 2>&1 || \
+		$(ENVTEST) use --bin-dir $(LOCALBIN) -p path > /dev/null 2>&1
+	@chmod +x $(LOCALBIN)/k8s/*/etcd $(LOCALBIN)/k8s/*/kube-apiserver $(LOCALBIN)/k8s/*/kubectl 2>/dev/null || true
 
 
 # Build flags
 BUILD_FLAGS = -v -o $(APP) -ldflags "-X github.com/vanelin/$(APP).git/cmd.appVersion=$(APP_VERSION)"
 
-.PHONY: all build build-linux clean test test-coverage format get lint server server-debug server-trace list list-namespace check-env dev-server dev docker-build docker-build-multi docker-clean clean-all push help vulncheck version-info envtest
+.PHONY: all build build-linux clean test test-coverage format get lint server list list-namespace test-informer check-env dev-server dev docker-build docker-build-multi docker-clean clean-all push help vulncheck version-info envtest
 
 # Default target
 all: clean build
@@ -130,31 +144,29 @@ clean-all: clean docker-clean
 # Run all tests (unit + Kubernetes integration tests)
 test: envtest
 	@echo "Running all tests with envtest..."
+	@echo "Using KUBEBUILDER_ASSETS: $(shell $(ENVTEST) use --arch $(TARGETARCH) --bin-dir $(LOCALBIN) -p path)"
 	go install gotest.tools/gotestsum@latest
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use --bin-dir $(LOCALBIN) -p path)" gotestsum --junitfile report.xml --format testname ./... ${TEST_ARGS}
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use --arch $(TARGETARCH) --bin-dir $(LOCALBIN) -p path)" gotestsum --junitfile report.xml --format testname ./... ${TEST_ARGS}
+
+# Test Deployment informer with envtest
+test-informer: envtest
+	@echo "Testing Deployment informer with envtest..."
+	@echo "Using KUBEBUILDER_ASSETS: $(shell $(ENVTEST) use --arch $(TARGETARCH) --bin-dir $(LOCALBIN) -p path)"
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use --arch $(TARGETARCH) --bin-dir $(LOCALBIN) -p path)" go test ./pkg/informer -run TestStartDeploymentInformer -v
 
 # Run all tests with coverage
 test-coverage: envtest
 	@echo "Running all tests with coverage..."
+	@echo "Using KUBEBUILDER_ASSETS: $(shell $(ENVTEST) use --arch $(TARGETARCH) --bin-dir $(LOCALBIN) -p path)"
 	go install github.com/boumenot/gocover-cobertura@latest
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use --bin-dir $(LOCALBIN) -p path)" go test -coverprofile=coverage.out -covermode=count ./...
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use --arch $(TARGETARCH) --bin-dir $(LOCALBIN) -p path)" go test -coverprofile=coverage.out -covermode=count ./...
 	go tool cover -func=coverage.out
 	gocover-cobertura < coverage.out > coverage.xml
 
-# Run server command
+# Run server command with Deployment informer
 server: build
-	@echo "Starting FastHTTP server..."
-	./$(BINARY_NAME) server
-
-# Run server with debug logging
-server-debug: build
-	@echo "Starting FastHTTP server with debug logging..."
-	./$(BINARY_NAME) server --log-level debug
-
-# Run server with trace logging
-server-trace: build
-	@echo "Starting FastHTTP server with trace logging..."
-	./$(BINARY_NAME) server --log-level trace
+	@echo "Starting FastHTTP server with Deployment informer..."
+	./$(BINARY_NAME) server --kubeconfig $(KUBECONFIG) --namespace $(NAMESPACE)
 
 # Run list command
 list: build
@@ -269,6 +281,8 @@ version-info:
 	@echo "  Version: $(VERSION)"
 	@echo "  App Version: $(APP_VERSION)"
 	@echo "  Docker Tag: $(DOCKER_TAG)"
+	@echo "  System Architecture: $(ARCH)"
+	@echo "  Target Architecture: $(TARGETARCH)"
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary
@@ -301,6 +315,7 @@ help:
 	@echo "Test commands:"
 	@echo "  test           - Run all tests with envtest (unit + Kubernetes integration)"
 	@echo "  test-coverage  - Run all tests with coverage report and XML output"
+	@echo "  test-informer  - Test Deployment informer with envtest (interactive)"
 	@echo "  envtest        - Download setup-envtest tool for Kubernetes testing"
 	@echo ""
 	@echo "Dependency commands:"
@@ -309,10 +324,8 @@ help:
 	@echo "  lint           - Lint code"
 	@echo "  vulncheck      - Check for vulnerabilities in dependencies"
 	@echo ""
-	@echo "Server commands:"
-	@echo "  server         - Build and start FastHTTP server"
-	@echo "  server-debug   - Start server with debug logging"
-	@echo "  server-trace   - Start server with trace logging"
+	@echo "Server commands (with Deployment Informer):"
+	@echo "  server         - Build and start FastHTTP server with Deployment informer"
 	@echo ""
 	@echo "List commands:"
 	@echo "  list           - List Kubernetes deployments"
