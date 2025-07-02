@@ -14,8 +14,7 @@ import (
 var (
 	logLevel   string
 	appConfig  config.Config
-	appVersion = "dev"     // This will be set during build time via ldflags
-	buildTime  = "unknown" // This will be set during build time via ldflags
+	appVersion = "dev" // This will be set during build time via ldflags
 )
 
 // parseLogLevel converts string log level to zerolog.Level
@@ -98,9 +97,9 @@ func getLogLevel() string {
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:     "k8s-controller",
-	Short:   "A Kubernetes controller with FastHTTP server (version: " + appVersion + ", build time: " + buildTime + ")",
+	Short:   "A Kubernetes controller with FastHTTP server (version: " + appVersion + ")",
 	Long:    `A Go-based Kubernetes controller with structured logging, environment configuration using Viper, and a FastHTTP server.`,
-	Version: fmt.Sprintf("%s (built: %s)", appVersion, buildTime),
+	Version: appVersion,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		// Load configuration first
 		if err := loadConfiguration(); err != nil {
@@ -114,7 +113,6 @@ var rootCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("=== k8s-controller CLI ===")
 		fmt.Printf("Version: %s\n", appVersion)
-		fmt.Printf("Build Time: %s\n", buildTime)
 		fmt.Printf("Current log level: %s\n", getLogLevel())
 		fmt.Println()
 

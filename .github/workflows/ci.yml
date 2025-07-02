@@ -30,6 +30,11 @@ env:
   REGISTRY: ghcr.io
   REPOSITORY: ${{ github.repository_owner }}
   APP: k8s-controller
+  SERVER_PORT: 8080
+  LOGGING_LEVEL: debug
+  KUBECONFIG: ~/.kube/config
+  NAMESPACE: default
+  IN_CLUSTER: false
 
 jobs:
   codeql:
@@ -123,13 +128,13 @@ jobs:
           go-version: '1.24.4'
           cache: true
 
-      - name: Run tests
-        run: make test
-
       - name: Get dependencies and format code
         run: |
           make get
           make format
+
+      - name: Run tests
+        run: make test
 
       - name: Build binaries
         run: |
@@ -180,6 +185,8 @@ jobs:
         with:
           path: go-build-cache
           key: ${{ runner.os }}-go-build-cache-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-build-cache-
 
       - name: Fix cache permissions
         if: steps.cache.outputs.cache-hit == 'true'
@@ -215,8 +222,11 @@ jobs:
           provenance: false
           build-args: |
             VERSION=${{ needs.calculate-version.outputs.version }}
-            SERVER_PORT=8080
-            LOGGING_LEVEL=debug
+            SERVER_PORT=${{ env.SERVER_PORT }}
+            LOGGING_LEVEL=${{ env.LOGGING_LEVEL }}
+            KUBECONFIG=${{ env.KUBECONFIG }}
+            NAMESPACE=${{ env.NAMESPACE }}
+            IN_CLUSTER=${{ env.IN_CLUSTER }}
 
       - name: Trivy Scan Docker Image
         uses: aquasecurity/trivy-action@0.31.0

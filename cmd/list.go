@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
+	"github.com/vanelin/k8s-controller.git/pkg/common/utils"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
@@ -31,27 +31,14 @@ var listCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		// Check if namespace exists
-		namespace, err := clientset.CoreV1().Namespaces().Get(context.Background(), namespaceFlag, metav1.GetOptions{})
-		if err != nil {
-			log.Error().Err(err).Str("namespace", namespaceFlag).Msg("Namespace does not exist")
-
-			// List available namespaces
-			namespaces, err := clientset.CoreV1().Namespaces().List(context.Background(), metav1.ListOptions{})
-			if err != nil {
-				log.Error().Err(err).Msg("Failed to list namespaces")
-				os.Exit(1)
-			}
-
-			fmt.Printf("Namespace '%s' does not exist.\n", namespaceFlag)
-			fmt.Printf("Available namespaces:\n")
-			for _, ns := range namespaces.Items {
-				fmt.Printf("- %s\n", ns.Name)
-			}
+		// Check if namespace exists using utility function
+		result := utils.CheckNamespace(context.Background(), clientset, namespaceFlag)
+		if !result.Exists {
+			utils.LogNamespaceCheck(result, "error")
 			os.Exit(1)
 		}
 
-		log.Info().Str("namespace", namespace.Name).Msg("Namespace exists, listing deployments")
+		log.Info().Str("namespace", result.Namespace).Msg("Namespace exists, listing deployments")
 
 		// List Deployments
 		deployments, err := clientset.AppsV1().Deployments(namespaceFlag).List(context.Background(), metav1.ListOptions{})
@@ -66,28 +53,16 @@ var listCmd = &cobra.Command{
 	},
 }
 
-// expandTilde expands the tilde (~) to the user's home directory
-func expandTilde(path string) string {
-	if len(path) > 0 && path[0] == '~' {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return path // Return original path if we can't get home directory
-		}
-		return filepath.Join(home, path[1:])
-	}
-	return path
-}
-
 // Uses the existing appConfig that was loaded by root.go with Viper
 func getKubeconfigPath() string {
 	// 1. CLI flag takes highest priority
 	if kubeconfigFlag != "" {
-		return expandTilde(kubeconfigFlag)
+		return utils.ExpandTilde(kubeconfigFlag)
 	}
 
 	// 2-4. Use the existing appConfig which already has the proper priority logic
 	// from Viper (env vars -> .env file -> defaults)
-	return expandTilde(appConfig.KUBECONFIG)
+	return utils.ExpandTilde(appConfig.KUBECONFIG)
 }
 
 func getKubeClient(kubeconfigPath string) (*kubernetes.Clientset, error) {
