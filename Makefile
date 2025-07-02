@@ -85,7 +85,7 @@ $(ENVTEST): $(LOCALBIN)
 # Build flags
 BUILD_FLAGS = -v -o $(APP) -ldflags "-X github.com/vanelin/$(APP).git/cmd.appVersion=$(APP_VERSION)"
 
-.PHONY: all build build-linux clean test test-coverage format get lint server list list-namespace test-informer check-env dev-server dev docker-build docker-build-multi docker-clean clean-all push help vulncheck version-info envtest
+.PHONY: all build build-linux clean test test-coverage format fmt get lint server list list-namespace test-informer check-env dev-server dev docker-build docker-build-multi docker-clean clean-all push help vulncheck version-info envtest
 
 # Default target
 all: clean build
@@ -100,6 +100,9 @@ format:
 		go install golang.org/x/tools/cmd/goimports@latest; \
 		goimports -w ./; \
 	fi
+
+# Alias for format
+fmt: format
 
 # Get dependencies
 get:
@@ -227,7 +230,7 @@ dev: check-env get format lint test vulncheck build
 # Server development workflow
 dev-server: check-env get format lint test vulncheck server
 
-# Production build
+# Release build
 prod: clean get test build
 
 # Docker build for single architecture
@@ -321,6 +324,7 @@ help:
 	@echo "Dependency commands:"
 	@echo "  get            - Get dependencies"
 	@echo "  format         - Format code"
+	@echo "  fmt            - Alias for format"
 	@echo "  lint           - Lint code"
 	@echo "  vulncheck      - Check for vulnerabilities in dependencies"
 	@echo ""
@@ -335,7 +339,7 @@ help:
 	@echo "  check-env      - Check/create .env file"
 	@echo "  dev            - Development workflow (check-env, get, format, lint, test, build)"
 	@echo "  dev-server     - Server development workflow (check-env, get, format, lint, test, server)"
-	@echo "  prod           - Production build (clean, get, test, build)"
+	@echo "  prod           - Release build (clean, get, test, build)"
 	@echo "  version-info   - Show version information"
 	@echo ""
 	@echo "Docker commands:"

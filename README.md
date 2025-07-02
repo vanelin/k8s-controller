@@ -228,8 +228,7 @@ EOF
 
 #### What it does
 
-Lists Deployments in the specified namespace with error handling and logging.
-
+Lists deployments in the specified namespace with error handling and logging.
 
 #### List Command Configuration
 
@@ -315,19 +314,53 @@ make server
 
 **Test Environment:** Test commands automatically set up `KUBEBUILDER_ASSETS` for envtest integration - no manual configuration needed.
 
-## Helm Chart
+## Deployment Examples
 
-- The Helm chart is located in the `charts/app/` directory.
-- To package the chart:
-  ```bash
-  helm package charts/app --version <version> --app-version <version>
-  ```
-- To install the chart:
-  ```bash
-  helm upgrade --install k8s-controller ./k8s-controller-helm-chart.tgz \
-    --namespace <your-namespace> \
-    --create-namespace
-  ```
+This section provides examples of how to deploy the controller in different environments. Note that this is a development/experimental project and should not be used in production environments without proper testing and validation.
+
+### Using Docker
+
+```bash
+# Pull the latest image
+docker pull ghcr.io/vanelin/k8s-controller:latest
+
+# Run with custom configuration
+docker run --rm \
+  --name k8s-controller \
+  -v ~/.kube:/root/.kube:ro \
+  -e KUBECONFIG=/root/.kube/config \
+  -e IN_CLUSTER=false \
+  -e LOGGING_LEVEL=debug \
+  -e NAMESPACE=default \
+  -p 8080:8080 \
+  ghcr.io/vanelin/k8s-controller:latest server
+```
+
+### Using Helm Chart
+
+The Helm chart is located in the `charts/app/` directory.
+
+#### Package the Chart
+```bash
+helm package charts/app --version <version> --app-version <version>
+```
+
+#### Install the Chart
+```bash
+# Basic installation
+helm upgrade --install k8s-controller ./k8s-controller-helm-chart.tgz \
+  --namespace k8s-controller \
+  --create-namespace
+
+# With custom values
+helm upgrade --install k8s-controller ./k8s-controller-helm-chart.tgz \
+  --namespace k8s-controller \
+  --create-namespace \
+  --set server.port=9090 \
+  --set server.logLevel=info \
+  --set server.namespace=monitoring \
+  --set server.inCluster=true
+```
 
 ## Getting Help
 
@@ -340,6 +373,61 @@ make server
 
 # List command help
 ./k8s-controller list --help
+```
+
+## Troubleshooting
+
+### Common Issues
+
+#### Permission Denied Errors
+```bash
+# If you get permission errors with kubeconfig
+chmod 600 ~/.kube/config
+
+# For Docker builds
+sudo usermod -aG docker $USER
+```
+
+#### Port Already in Use
+```bash
+# Check what's using the port
+sudo netstat -tulpn | grep :8080
+
+# Use a different port
+./k8s-controller server --port 8081
+```
+
+#### Kubernetes Connection Issues
+```bash
+# Test kubectl connection
+./kubebuilder/bin/kubectl cluster-info  
+
+# Check if kubeconfig is valid
+./kubebuilder/bin/kubectl config view --raw --minify --flatten
+
+# Use in-cluster config if running inside Kubernetes
+./k8s-controller server --in-cluster
+```
+
+#### Build Issues
+```bash
+# Clean and rebuild
+make clean
+make build
+
+# Update dependencies
+make get
+```
+
+### Debug Mode
+
+Enable debug logging to get more detailed information:
+```bash
+# Set debug level
+export LOGGING_LEVEL=debug
+
+# Or use CLI flag
+./k8s-controller server --log-level debug
 ```
 
 ## License
