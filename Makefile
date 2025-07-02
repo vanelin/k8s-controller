@@ -95,7 +95,7 @@ get:
 	$(GOMOD) verify
 
 # Build the application
-build: format get
+build: format get lint
 	@echo "Building $(BINARY_NAME) for $(TARGETOS)/$(TARGETARCH) with version $(VERSION)..."
 	CGO_ENABLED=0 GOOS=$(TARGETOS) GOARCH=$(TARGETARCH) $(GOBUILD) $(BUILD_FLAGS) $(MAIN_PATH)
 	@echo "Build completed: $(BINARY_NAME)"
