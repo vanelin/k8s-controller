@@ -187,6 +187,12 @@ check-env:
 
 # Lint code
 lint:
+	@if ! command -v golangci-lint &> /dev/null && [ ! -f "$$(go env GOPATH)/bin/golangci-lint" ]; then \
+		echo "Installing golangci-lint..."; \
+		curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $$(go env GOPATH)/bin v2.2.1; \
+		echo "Please add $$(go env GOPATH)/bin to your PATH if not already done"; \
+		echo "You can run: export PATH=$$PATH:$$(go env GOPATH)/bin"; \
+	fi
 	@echo "Linting code..."
 	golangci-lint run
 
