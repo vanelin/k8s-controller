@@ -20,5 +20,5 @@ jobs:
           package-name: k8s-controller
           package-type: container
           token: ${{ secrets.PAT }}
-          min-versions-to-keep: 5
+          min-versions-to-keep: 20
           ignore-versions: '^(latest|(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(@sha256:.*)?)$'
