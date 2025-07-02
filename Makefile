@@ -225,7 +225,7 @@ vulncheck:
 dev: check-env get format lint test vulncheck build
 
 # Server development workflow
-dev-server: check-env get format lint test server
+dev-server: check-env get format lint test vulncheck server
 
 # Production build
 prod: clean get test build
