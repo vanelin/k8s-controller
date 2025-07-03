@@ -32,6 +32,7 @@ endif
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 ENVTEST_VERSION ?= latest
 LOCALBIN ?= $(shell pwd)/bin
+USE_EXISTING_CLUSTER ?= false
 
 # Version calculation (matching CI workflow logic)
 LATEST_TAG := $(shell git describe --tags --abbrev=0 2>/dev/null || echo "0.1.0")
@@ -149,13 +150,13 @@ test: envtest
 	@echo "Running all tests with envtest..."
 	@echo "Using KUBEBUILDER_ASSETS: $(shell $(ENVTEST) use --arch $(TARGETARCH) --bin-dir $(LOCALBIN) -p path)"
 	go install gotest.tools/gotestsum@latest
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use --arch $(TARGETARCH) --bin-dir $(LOCALBIN) -p path)" gotestsum --junitfile report.xml --format testname ./... ${TEST_ARGS}
+	USE_EXISTING_CLUSTER=$(USE_EXISTING_CLUSTER) KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use --arch $(TARGETARCH) --bin-dir $(LOCALBIN) -p path)" gotestsum --junitfile report.xml --format testname ./... ${TEST_ARGS}
 
 # Test Deployment informer with envtest
 test-informer: envtest
 	@echo "Testing Deployment informer with envtest..."
 	@echo "Using KUBEBUILDER_ASSETS: $(shell $(ENVTEST) use --arch $(TARGETARCH) --bin-dir $(LOCALBIN) -p path)"
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use --arch $(TARGETARCH) --bin-dir $(LOCALBIN) -p path)" go test ./pkg/informer -run TestStartDeploymentInformer -v
+	USE_EXISTING_CLUSTER=$(USE_EXISTING_CLUSTER) KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use --arch $(TARGETARCH) --bin-dir $(LOCALBIN) -p path)" go test ./pkg/informer -run TestStartDeploymentInformer -v
 
 # Run all tests with coverage
 test-coverage: envtest
