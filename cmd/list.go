@@ -24,7 +24,10 @@ var listCmd = &cobra.Command{
 		// Get kubeconfig path with proper priority using existing config logic
 		kubeconfigPath := getKubeconfigPath()
 
-		log.Info().Str("kubeconfig", kubeconfigPath).Str("namespace", namespaceFlag).Msg("Using kubeconfig path and namespace")
+		// Get namespace with proper priority: CLI flag > env vars > .env file > defaults
+		namespaceToUse := getNamespaceWithPriority()
+
+		log.Info().Str("kubeconfig", kubeconfigPath).Str("namespace", namespaceToUse).Msg("Using kubeconfig path and namespace")
 
 		clientset, err := getKubeClient(kubeconfigPath)
 		if err != nil {
@@ -32,8 +35,8 @@ var listCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		// Parse namespaces from flag (comma-separated)
-		namespaces := parseNamespaces(namespaceFlag)
+		// Parse namespaces from the determined namespace value (comma-separated)
+		namespaces := parseNamespaces(namespaceToUse)
 
 		// List deployments for each namespace
 		totalDeployments := 0
@@ -79,6 +82,20 @@ func getKubeconfigPath() string {
 	return utils.ExpandTilde(appConfig.KUBECONFIG)
 }
 
+// getNamespaceWithPriority returns the namespace with proper priority: CLI flag > env vars > .env file > defaults
+func getNamespaceWithPriority() string {
+	// 1. CLI flag takes highest priority
+	if namespaceFlag != "" {
+		return namespaceFlag
+	}
+	// 2. Config (env/.env)
+	if appConfig.Namespace != "" {
+		return appConfig.Namespace
+	}
+	// 3. Default fallback
+	return "default"
+}
+
 func getKubeClient(kubeconfigPath string) (*kubernetes.Clientset, error) {
 	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
 	if err != nil {
@@ -103,5 +120,5 @@ func parseNamespaces(namespaceString string) []string {
 func init() {
 	rootCmd.AddCommand(listCmd)
 	listCmd.Flags().StringVar(&kubeconfigFlag, "kubeconfig", "", "Path to the kubeconfig file (overrides env vars and config)")
-	listCmd.Flags().StringVarP(&namespaceFlag, "namespace", "n", "default", "Namespace(s) to list deployments from (comma-separated)")
+	listCmd.Flags().StringVarP(&namespaceFlag, "namespace", "n", "", "Namespace(s) to list deployments from (comma-separated)")
 }
