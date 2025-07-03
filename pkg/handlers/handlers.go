@@ -31,6 +31,12 @@ type ErrorResponse struct {
 	Message string `json:"message"`
 }
 
+// DeploymentsAllResponse represents the response for all deployments across namespaces
+type DeploymentsAllResponse struct {
+	Namespaces []DeploymentResponse `json:"namespaces"`
+	TotalCount int                  `json:"total_count"`
+}
+
 // HandlerManager manages HTTP handlers with access to the informer manager
 type HandlerManager struct {
 	informerManager *informer.DeploymentInformerManager
@@ -73,20 +79,35 @@ func (hm *HandlerManager) CreateHandler() fasthttp.RequestHandler {
 	}
 }
 
-// handleGetDeployments handles GET /deployments - returns deployments from default namespace
+// handleGetDeployments handles GET /deployments - returns deployments from all watched namespaces
 func (hm *HandlerManager) handleGetDeployments(ctx *fasthttp.RequestCtx, logger zerolog.Logger) {
 	logger.Info().Msg("Deployments request received")
 
-	// Get deployments from default namespace
-	deployments := hm.informerManager.GetDeploymentNames("default")
-
-	response := DeploymentResponse{
-		Namespace:   "default",
-		Deployments: deployments,
-		Count:       len(deployments),
+	availableNamespaces := hm.informerManager.GetAvailableNamespaces()
+	if len(availableNamespaces) == 0 {
+		hm.writeErrorResponse(ctx, "No namespaces are being watched", 404, logger)
+		return
 	}
 
-	hm.writeJSONResponse(ctx, response, 200, logger)
+	var responses []DeploymentResponse
+	total := 0
+	for _, ns := range availableNamespaces {
+		deployments := hm.informerManager.GetDeploymentNames(ns)
+		resp := DeploymentResponse{
+			Namespace:   ns,
+			Deployments: deployments,
+			Count:       len(deployments),
+		}
+		responses = append(responses, resp)
+		total += len(deployments)
+	}
+
+	allResp := DeploymentsAllResponse{
+		Namespaces: responses,
+		TotalCount: total,
+	}
+
+	hm.writeJSONResponse(ctx, allResp, 200, logger)
 }
 
 // handleGetDeploymentsByNamespace handles GET /deployments/{namespace} - returns deployments from specific namespace

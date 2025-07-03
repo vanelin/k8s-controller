@@ -84,16 +84,14 @@ func TestHandlerManager_handleGetDeployments(t *testing.T) {
 	logger := zerolog.Nop()
 	handlerManager.handleGetDeployments(ctx, logger)
 
-	assert.Equal(t, 200, ctx.Response.StatusCode())
-	assert.Contains(t, string(ctx.Response.Header.ContentType()), "application/json")
+	assert.Equal(t, 404, ctx.Response.StatusCode())
 
-	var response DeploymentResponse
+	var response ErrorResponse
 	err := json.Unmarshal(ctx.Response.Body(), &response)
 	require.NoError(t, err)
 
-	assert.Equal(t, "default", response.Namespace)
-	assert.Equal(t, 0, response.Count)
-	assert.Empty(t, response.Deployments)
+	assert.Equal(t, "Request Error", response.Error)
+	assert.Contains(t, response.Message, "No namespaces are being watched")
 }
 
 func TestHandlerManager_handleGetDeploymentsByNamespace_InvalidPath(t *testing.T) {

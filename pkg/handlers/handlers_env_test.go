@@ -184,14 +184,38 @@ func TestHandlerManager_Integration_WithRealKubernetes(t *testing.T) {
 
 		assert.Equal(t, 200, ctx.Response.StatusCode())
 
-		var response DeploymentResponse
+		var response DeploymentsAllResponse
 		err := json.Unmarshal(ctx.Response.Body(), &response)
 		require.NoError(t, err)
 
-		assert.Equal(t, "default", response.Namespace)
-		// Default namespace should be empty since we didn't create deployments there
-		assert.Equal(t, 0, response.Count)
-		assert.Empty(t, response.Deployments)
+		// Should return deployments from all watched namespaces (test-ns-1 and test-ns-2)
+		assert.Equal(t, 3, response.TotalCount)
+		assert.Equal(t, 2, len(response.Namespaces))
+
+		// Check test-ns-1
+		var ns1Resp *DeploymentResponse
+		for _, ns := range response.Namespaces {
+			if ns.Namespace == "test-ns-1" {
+				ns1Resp = &ns
+				break
+			}
+		}
+		require.NotNil(t, ns1Resp)
+		assert.Equal(t, 2, ns1Resp.Count)
+		assert.Contains(t, ns1Resp.Deployments, "deployment-1")
+		assert.Contains(t, ns1Resp.Deployments, "deployment-2")
+
+		// Check test-ns-2
+		var ns2Resp *DeploymentResponse
+		for _, ns := range response.Namespaces {
+			if ns.Namespace == "test-ns-2" {
+				ns2Resp = &ns
+				break
+			}
+		}
+		require.NotNil(t, ns2Resp)
+		assert.Equal(t, 1, ns2Resp.Count)
+		assert.Contains(t, ns2Resp.Deployments, "deployment-3")
 	})
 
 	t.Run("NamespaceNotWatched", func(t *testing.T) {
@@ -422,7 +446,7 @@ func TestHandlerManager_MultipleNamespacesFromEnvironment(t *testing.T) {
 		assert.Contains(t, response.Deployments, "env-deployment-6")
 	})
 
-	t.Run("DefaultNamespace_ShouldBeEmpty", func(t *testing.T) {
+	t.Run("DefaultNamespace_ShouldReturnAllWatchedNamespaces", func(t *testing.T) {
 		ctx := &fasthttp.RequestCtx{}
 		ctx.Request.SetRequestURI("/deployments")
 		ctx.Request.Header.SetMethod("GET")
@@ -432,15 +456,52 @@ func TestHandlerManager_MultipleNamespacesFromEnvironment(t *testing.T) {
 
 		assert.Equal(t, 200, ctx.Response.StatusCode())
 
-		var response DeploymentResponse
+		var response DeploymentsAllResponse
 		err := json.Unmarshal(ctx.Response.Body(), &response)
 		require.NoError(t, err)
 
-		assert.Equal(t, "default", response.Namespace)
-		// Default namespace should be empty since we didn't create deployments there
-		// and it's not in our environment variable list
-		assert.Equal(t, 0, response.Count)
-		assert.Empty(t, response.Deployments)
+		// Should return deployments from all watched namespaces (env-ns-1, env-ns-2, env-ns-3)
+		assert.Equal(t, 6, response.TotalCount)
+		assert.Equal(t, 3, len(response.Namespaces))
+
+		// Check env-ns-1
+		var ns1Resp *DeploymentResponse
+		for _, ns := range response.Namespaces {
+			if ns.Namespace == "env-ns-1" {
+				ns1Resp = &ns
+				break
+			}
+		}
+		require.NotNil(t, ns1Resp)
+		assert.Equal(t, 2, ns1Resp.Count)
+		assert.Contains(t, ns1Resp.Deployments, "env-deployment-1")
+		assert.Contains(t, ns1Resp.Deployments, "env-deployment-2")
+
+		// Check env-ns-2
+		var ns2Resp *DeploymentResponse
+		for _, ns := range response.Namespaces {
+			if ns.Namespace == "env-ns-2" {
+				ns2Resp = &ns
+				break
+			}
+		}
+		require.NotNil(t, ns2Resp)
+		assert.Equal(t, 1, ns2Resp.Count)
+		assert.Contains(t, ns2Resp.Deployments, "env-deployment-3")
+
+		// Check env-ns-3
+		var ns3Resp *DeploymentResponse
+		for _, ns := range response.Namespaces {
+			if ns.Namespace == "env-ns-3" {
+				ns3Resp = &ns
+				break
+			}
+		}
+		require.NotNil(t, ns3Resp)
+		assert.Equal(t, 3, ns3Resp.Count)
+		assert.Contains(t, ns3Resp.Deployments, "env-deployment-4")
+		assert.Contains(t, ns3Resp.Deployments, "env-deployment-5")
+		assert.Contains(t, ns3Resp.Deployments, "env-deployment-6")
 	})
 
 	t.Run("NamespaceNotInEnvironmentVariable_ShouldReturn404", func(t *testing.T) {
