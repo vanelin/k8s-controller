@@ -2,9 +2,9 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/valyala/fasthttp"
 	"github.com/vanelin/k8s-controller.git/pkg/common/utils"
+	"github.com/vanelin/k8s-controller.git/pkg/handlers"
 	"github.com/vanelin/k8s-controller.git/pkg/informer"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -62,10 +63,24 @@ var serverCmd = &cobra.Command{
 			inCluster = appConfig.InCluster
 		}
 
-		namespace := serverNamespace
-		if namespace == "" {
-			namespace = appConfig.Namespace
+		// Parse namespaces to watch from --namespace (comma-separated)
+		namespacesToWatch := []string{"default"}
+		if serverNamespace != "" {
+			// Parse CLI flag (comma-separated)
+			namespacesToWatch = strings.Split(serverNamespace, ",")
+			for i, ns := range namespacesToWatch {
+				namespacesToWatch[i] = strings.TrimSpace(ns)
+			}
+		} else if appConfig.Namespace != "" {
+			// Parse environment variable (comma-separated)
+			namespacesToWatch = strings.Split(appConfig.Namespace, ",")
+			for i, ns := range namespacesToWatch {
+				namespacesToWatch[i] = strings.TrimSpace(ns)
+			}
 		}
+
+		var informerManager *informer.DeploymentInformerManager
+		var handlerManager *handlers.HandlerManager
 
 		if kubeconfig != "" || inCluster {
 			// Create Kubernetes client
@@ -75,23 +90,31 @@ var serverCmd = &cobra.Command{
 				os.Exit(1)
 			}
 
-			// Check if namespace exists before starting informer
-			originalNamespace := namespace
-			result := utils.CheckNamespace(context.Background(), clientset, namespace)
-			if !result.Exists {
-				log.Warn().Err(result.Error).Str("namespace", namespace).Msg("Namespace does not exist, using default namespace")
-				namespace = "default"
-				log.Info().Str("original_namespace", originalNamespace).Str("fallback_namespace", namespace).Msg("Switched to default namespace")
+			// Create informer manager
+			informerManager = informer.NewDeploymentInformerManager(clientset)
+
+			// Start informers for each namespace
+			for _, namespace := range namespacesToWatch {
+				// Check if namespace exists before starting informer
+				result := utils.CheckNamespace(context.Background(), clientset, namespace)
+				if !result.Exists {
+					log.Warn().Err(result.Error).Str("namespace", namespace).Msg("Namespace does not exist, skipping")
+					continue
+				}
+
+				log.Info().Str("namespace", namespace).Msg("Starting informer for namespace")
+				informerManager.StartInformer(ctx, namespace)
 			}
 
-			// Start Deployment informer in background with WaitGroup
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				informer.StartDeploymentInformer(ctx, clientset, namespace)
-			}()
+			// Create handler manager
+			handlerManager = handlers.NewHandlerManager(informerManager, appVersion)
+
+			log.Info().Strs("namespaces", namespacesToWatch).Msg("Started informers for namespaces")
 		} else {
 			log.Info().Msg("Skipping Deployment informer - no Kubernetes configuration provided")
+			// Create empty informer manager for handlers
+			informerManager = informer.NewDeploymentInformerManager(nil)
+			handlerManager = handlers.NewHandlerManager(informerManager, appVersion)
 		}
 
 		// Determine port with proper formatting - add colon for FastHTTP
@@ -102,11 +125,7 @@ var serverCmd = &cobra.Command{
 
 		// Create HTTP server with graceful shutdown
 		server := &fasthttp.Server{
-			Handler: func(ctx *fasthttp.RequestCtx) {
-				if _, err := fmt.Fprintf(ctx, "Hello from FastHTTP!"); err != nil {
-					log.Error().Err(err).Msg("Failed to write response")
-				}
-			},
+			Handler: handlerManager.CreateHandler(),
 		}
 
 		// Start HTTP server in background
@@ -138,7 +157,7 @@ var serverCmd = &cobra.Command{
 			log.Error().Err(err).Msg("Error shutting down HTTP server")
 		}
 
-		// Cancel context to stop informer
+		// Cancel context to stop informers
 		cancel()
 
 		// Wait for all goroutines to finish
@@ -168,5 +187,5 @@ func init() {
 	serverCmd.Flags().StringVarP(&serverPort, "port", "p", "", "Port to run the server on (overrides env vars and config, default: 8080)")
 	serverCmd.Flags().StringVar(&serverKubeconfig, "kubeconfig", "", "Path to the kubeconfig file (default: ~/.kube/config)")
 	serverCmd.Flags().BoolVar(&serverInCluster, "in-cluster", false, "Use in-cluster Kubernetes config (default: false)")
-	serverCmd.Flags().StringVarP(&serverNamespace, "namespace", "n", "", "Namespace to watch for Deployments (default: default)")
+	serverCmd.Flags().StringVarP(&serverNamespace, "namespace", "n", "", "Namespace(s) to watch for Deployments (comma-separated, default: default)")
 }

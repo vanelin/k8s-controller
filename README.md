@@ -25,6 +25,7 @@ A Go-based Kubernetes controller with structured logging, environment configurat
 ## Features
 
 - **FastHTTP Server** - High-performance HTTP server with configurable port and logging
+- **REST API** - JSON API endpoints for deployment information with multi-namespace support
 - **Deployment Informer** - Real-time Kubernetes Deployment event monitoring using client-go informers
 - **Kubernetes Integration** - List deployments and manage Kubernetes resources with namespace support
 - **Smart Configuration** - Load from `.env` files, environment variables, or CLI flags with proper priority
@@ -48,27 +49,33 @@ A Go-based Kubernetes controller with structured logging, environment configurat
 ```
 k8s-controller/
 ├── cmd/
-│   ├── root.go          # Main CLI application
-│   ├── server.go        # FastHTTP server command with informer
-│   ├── server_test.go   # Tests for server command
-│   ├── list.go          # Kubernetes deployments list command
-│   └── list_test.go     # Tests for list command
+│   ├── root.go                    # Main CLI application
+│   ├── server.go                  # FastHTTP server command with informer
+│   ├── server_test.go             # Tests for server command
+│   ├── list.go                    # Kubernetes deployments list command
+│   └── list_test.go               # Tests for list command
 ├── pkg/
 │   ├── common/
-│   │   ├── config/      # Configuration management
+│   │   ├── config/                # Configuration management
 │   │   │   ├── config.go
 │   │   │   └── config_test.go
-│   │   └── envs/        # Environment files
+│   │   ├── utils/                 # Utility functions
+│   │   │   └── k8s.go             # Kubernetes utilities
+│   │   └── envs/                  # Environment files
 │   │       └── .env
-│   ├── informer/        # Deployment informer implementation
+│   ├── handlers/                  # HTTP handlers for API endpoints
+│   │   ├── handlers.go            # Main handler implementation
+│   │   ├── handlers_test.go       # Unit tests
+│   │   └── handlers_env_test.go   # Integration tests with envtest
+│   ├── informer/                  # Deployment informer implementation
 │   │   ├── informer.go
 │   │   └── informer_test.go
-│   └── testutil/        # Testing utilities and envtest setup
+│   └── testutil/                  # Testing utilities and envtest setup
 │       ├── envtest.go
 │       └── envtest_test.go
-├── main.go              # Application entry point
-├── Makefile             # Development and build commands
-├── charts/app/          # Helm chart
+├── main.go                        # Application entry point
+├── Makefile                       # Development and build commands
+├── charts/app/                    # Helm chart
 └── README.md
 ```
 
@@ -81,7 +88,7 @@ k8s-controller/
 | `PORT` | Server port | `8080` |
 | `KUBECONFIG` | Path to Kubernetes configuration file | `~/.kube/config` |
 | `IN_CLUSTER` | Use in-cluster Kubernetes config | `false` |
-| `NAMESPACE` | Kubernetes namespace for operations | `default` |
+| `NAMESPACE` | Kubernetes namespace(s) for operations (comma-separated, e.g., "kube-system,monitoring") | `default` |
 | `LOGGING_LEVEL` | Logging level (trace, debug, info, warn, error) | `info` |
 
 ### Configuration Priority
@@ -91,7 +98,7 @@ All commands follow the same configuration priority:
 1. **CLI flags** (`--port`, `--log-level`, `--kubeconfig`, `--in-cluster`, `--namespace`) - highest priority
 2. **Environment variables** (`PORT`, `LOGGING_LEVEL`, `KUBECONFIG`, `IN_CLUSTER`, `NAMESPACE`)
 3. **`.env` file** values (`pkg/common/envs/.env`)
-4. **Default values** (PORT=8080, LOGGING_LEVEL=info, KUBECONFIG=~/.kube/config, IN_CLUSTER=false, namespace=default)
+4. **Default values** (PORT=8080, LOGGING_LEVEL=info, KUBECONFIG=~/.kube/config, IN_CLUSTER=false, NAMESPACE=default)
 
 ## Quick Start
 
@@ -109,6 +116,9 @@ make list
 
 # List deployments in custom namespace
 make list-namespace
+
+# Start server with multiple namespaces via environment variable
+export NAMESPACE=kube-system,monitoring && make server
 
 # Development workflow
 make dev-server
@@ -155,11 +165,25 @@ go run main.go server --port 9090 --log-level debug --kubeconfig ~/.kube/config 
 # Using in-cluster configuration
 go run main.go server --in-cluster --namespace kube-system
 
+# Multiple namespaces (comma-separated)
+go run main.go server --namespace kube-system,monitoring,default
+
+# Using environment variable for multiple namespaces
+export NAMESPACE=kube-system,monitoring,default
+go run main.go server
+
 # List deployments
 go run main.go list
 
 # List deployments with custom namespace
 go run main.go list --namespace kube-system
+
+# List deployments in multiple namespaces
+go run main.go list --namespace kube-system,test
+
+# Using environment variable for multiple namespaces
+export NAMESPACE=kube-system,test
+go run main.go list
 
 # Server with environment variables
 export PORT=9090 && export LOGGING_LEVEL=debug && go run main.go server
@@ -171,15 +195,61 @@ export KUBECONFIG=~/.kube/config-prod && export NAMESPACE=monitoring && go run m
 #### What it does
 
 - Starts a FastHTTP server on the specified port (default: 8080)
-- Responds with "Hello from FastHTTP!" to any HTTP request
-- Deployment Informer: Watches for Deployment events (add, update, delete) in the specified namespace
+- Provides JSON API endpoints for deployment information:
+  - `/` - Root endpoint with version information
+  - `/namespaces` - List all watched namespaces
+  - `/deployments` - List deployments from all watched namespaces
+  - `/deployments/{namespace}` - List deployments in specific namespace
+
+#### API Examples
+
+```bash
+# Start server with multiple namespaces
+./k8s-controller server --kubeconfig ~/.kube/config --port 8080 -n kube-system,monitoring
+
+# Get all watched namespaces
+curl -s http://localhost:8080/namespaces
+# Output: {"namespaces":["kube-system","monitoring"],"count":2}
+
+# Get deployments from all watched namespaces
+curl -s http://localhost:8080/deployments
+# Output: {
+#   "namespaces": [
+#     {
+#       "namespace": "kube-system",
+#       "deployments": ["system-1"],
+#       "count": 1
+#     },
+#     {
+#       "namespace": "monitoring",
+#       "deployments": ["grafana", "loki", "prometheus"],
+#       "count": 3
+#     }
+#   ],
+#   "total_count": 4
+# }
+
+# Get deployments in specific namespace
+curl -s http://localhost:8080/deployments/monitoring
+# Output: {"namespace":"monitoring","deployments":["grafana","loki","prometheus"],"count":3}
+
+curl -s http://localhost:8080/deployments/kube-system
+# Output: {"namespace":"kube-system","deployments":["system-1"],"count":1}
+
+# Get root endpoint with version info
+curl -s http://localhost:8080/
+# Output: {"endpoints":{"deployments":"/deployments","namespaces":"/namespaces"},"message":"Kubernetes Controller API","version":"v0.1.2"}
+```
+
+**Note:** The `/deployments` endpoint returns deployments from all namespaces being watched by the informer, not just the default namespace. This provides a comprehensive view of all deployments across monitored namespaces.
+- Deployment Informer: Watches for Deployment events (add, update, delete) in the specified namespace(s)
 - Uses structured logging with configurable levels
 - Supports hot-reload configuration via environment variables
 - Implements graceful shutdown with proper signal handling
 
 ### Kubernetes List Command
 
-List Kubernetes deployments in the specified namespace with configurable kubeconfig and comprehensive error handling.
+List Kubernetes deployments in the specified namespace(s) with configurable kubeconfig and comprehensive error handling.
 
 #### Basic Usage
 
@@ -224,11 +294,14 @@ EOF
 
 # List deployments in custom namespace
 ./k8s-controller list --namespace kube-system
+
+# List deployments in multiple namespaces
+./k8s-controller list --namespace kube-system,test
 ```
 
 #### What it does
 
-Lists deployments in the specified namespace with error handling and logging.
+Lists deployments in the specified namespace(s) with error handling and logging. Supports multiple namespaces separated by commas. When multiple namespaces are specified, deployments are listed per namespace with a total count.
 
 #### List Command Configuration
 
@@ -244,6 +317,13 @@ make build
 
 # Custom namespace
 ./k8s-controller list --namespace kube-system
+
+# Multiple namespaces
+./k8s-controller list --namespace kube-system,monitoring
+
+# Using environment variable for multiple namespaces
+export NAMESPACE=kube-system,monitoring
+./k8s-controller list
 
 # Environment variable for kubeconfig
 export KUBECONFIG=/path/to/kubeconfig && ./k8s-controller list
@@ -295,7 +375,7 @@ make help
 **Variable Override:** You can override any Makefile variable:
 ```bash
 # Override default values
-make server SERVER_PORT=9090 LOGGING_LEVEL=debug NAMESPACE=kube-system
+make server SERVER_PORT=9090 LOGGING_LEVEL=debug NAMESPACE=kube-system,monitoring
 
 # Cross-compilation
 make build TARGETOS=linux TARGETARCH=amd64
@@ -331,7 +411,7 @@ docker run --rm \
   -e KUBECONFIG=/root/.kube/config \
   -e IN_CLUSTER=false \
   -e LOGGING_LEVEL=debug \
-  -e NAMESPACE=default \
+  -e NAMESPACE=kube-system,monitoring,default \
   -p 8080:8080 \
   ghcr.io/vanelin/k8s-controller:latest server
 ```
