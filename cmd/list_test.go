@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/vanelin/k8s-controller.git/pkg/common/utils"
 )
 
@@ -177,7 +178,7 @@ func TestListCommandFlags(t *testing.T) {
 func TestListCommandUsage(t *testing.T) {
 	// Test that list command has correct usage information
 	expectedUse := "list"
-	expectedShort := "List Kubernetes deployments in the specified namespace"
+	expectedShort := "List Kubernetes deployments in the specified namespace(s)"
 
 	if listCmd.Use != expectedUse {
 		t.Errorf("Expected list command Use to be '%s', got '%s'", expectedUse, listCmd.Use)
@@ -256,6 +257,57 @@ func TestConfigurationPriority(t *testing.T) {
 			if result != tt.expectedResult {
 				t.Errorf("getKubeconfigPath() = %v, want %v", result, tt.expectedResult)
 			}
+		})
+	}
+}
+
+func TestParseNamespaces(t *testing.T) {
+	tests := []struct {
+		name           string
+		namespaceInput string
+		expected       []string
+	}{
+		{
+			name:           "Single namespace",
+			namespaceInput: "default",
+			expected:       []string{"default"},
+		},
+		{
+			name:           "Multiple namespaces",
+			namespaceInput: "kube-system,test",
+			expected:       []string{"kube-system", "test"},
+		},
+		{
+			name:           "Multiple namespaces with spaces",
+			namespaceInput: "kube-system , test",
+			expected:       []string{"kube-system", "test"},
+		},
+		{
+			name:           "Multiple namespaces with extra spaces",
+			namespaceInput: "  kube-system  ,  test  ",
+			expected:       []string{"kube-system", "test"},
+		},
+		{
+			name:           "Empty string",
+			namespaceInput: "",
+			expected:       []string{"default"},
+		},
+		{
+			name:           "Three namespaces",
+			namespaceInput: "default,kube-system,test",
+			expected:       []string{"default", "kube-system", "test"},
+		},
+		{
+			name:           "Single namespace with spaces",
+			namespaceInput: "  default  ",
+			expected:       []string{"default"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := parseNamespaces(tt.namespaceInput)
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }

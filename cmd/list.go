@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
@@ -18,7 +19,7 @@ var namespaceFlag string
 
 var listCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List Kubernetes deployments in the specified namespace",
+	Short: "List Kubernetes deployments in the specified namespace(s)",
 	Run: func(cmd *cobra.Command, args []string) {
 		// Get kubeconfig path with proper priority using existing config logic
 		kubeconfigPath := getKubeconfigPath()
@@ -31,24 +32,37 @@ var listCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		// Check if namespace exists using utility function
-		result := utils.CheckNamespace(context.Background(), clientset, namespaceFlag)
-		if !result.Exists {
-			utils.LogNamespaceCheck(result, "error")
-			os.Exit(1)
+		// Parse namespaces from flag (comma-separated)
+		namespaces := parseNamespaces(namespaceFlag)
+
+		// List deployments for each namespace
+		totalDeployments := 0
+		for _, namespace := range namespaces {
+			// Check if namespace exists using utility function
+			result := utils.CheckNamespace(context.Background(), clientset, namespace)
+			if !result.Exists {
+				log.Warn().Err(result.Error).Str("namespace", namespace).Msg("Namespace does not exist, skipping")
+				continue
+			}
+
+			log.Info().Str("namespace", namespace).Msg("Listing deployments in namespace")
+
+			// List Deployments
+			deployments, err := clientset.AppsV1().Deployments(namespace).List(context.Background(), metav1.ListOptions{})
+			if err != nil {
+				log.Error().Err(err).Str("namespace", namespace).Msg("Failed to list deployments")
+				continue
+			}
+
+			fmt.Printf("Found %d deployments in '%s' namespace:\n", len(deployments.Items), namespace)
+			for _, d := range deployments.Items {
+				fmt.Println("-", d.Name)
+			}
+			totalDeployments += len(deployments.Items)
 		}
 
-		log.Info().Str("namespace", result.Namespace).Msg("Namespace exists, listing deployments")
-
-		// List Deployments
-		deployments, err := clientset.AppsV1().Deployments(namespaceFlag).List(context.Background(), metav1.ListOptions{})
-		if err != nil {
-			log.Error().Err(err).Str("namespace", namespaceFlag).Msg("Failed to list deployments")
-			os.Exit(1)
-		}
-		fmt.Printf("Found %d deployments in '%s' namespace:\n", len(deployments.Items), namespaceFlag)
-		for _, d := range deployments.Items {
-			fmt.Println("-", d.Name)
+		if len(namespaces) > 1 {
+			fmt.Printf("\nTotal deployments across all namespaces: %d\n", totalDeployments)
 		}
 	},
 }
@@ -73,8 +87,21 @@ func getKubeClient(kubeconfigPath string) (*kubernetes.Clientset, error) {
 	return kubernetes.NewForConfig(config)
 }
 
+// parseNamespaces splits a comma-separated string of namespaces and trims whitespace
+func parseNamespaces(namespaceString string) []string {
+	if namespaceString == "" {
+		return []string{"default"}
+	}
+
+	namespaces := strings.Split(namespaceString, ",")
+	for i, ns := range namespaces {
+		namespaces[i] = strings.TrimSpace(ns)
+	}
+	return namespaces
+}
+
 func init() {
 	rootCmd.AddCommand(listCmd)
 	listCmd.Flags().StringVar(&kubeconfigFlag, "kubeconfig", "", "Path to the kubeconfig file (overrides env vars and config)")
-	listCmd.Flags().StringVarP(&namespaceFlag, "namespace", "n", "default", "Namespace to list deployments from")
+	listCmd.Flags().StringVarP(&namespaceFlag, "namespace", "n", "default", "Namespace(s) to list deployments from (comma-separated)")
 }
