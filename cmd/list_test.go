@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/vanelin/k8s-controller.git/pkg/common/utils"
+	"github.com/vanelin/k8s-controller/pkg/common/utils"
 )
 
 // setEnvSafely sets an environment variable and logs any error

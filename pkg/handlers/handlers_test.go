@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/valyala/fasthttp"
-	"github.com/vanelin/k8s-controller.git/pkg/informer"
+	"github.com/vanelin/k8s-controller/pkg/informer"
 )
 
 func TestNewHandlerManager(t *testing.T) {

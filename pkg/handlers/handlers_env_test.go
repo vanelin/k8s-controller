@@ -14,8 +14,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/vanelin/k8s-controller.git/pkg/informer"
-	testutil "github.com/vanelin/k8s-controller.git/pkg/testutil"
+	"github.com/vanelin/k8s-controller/pkg/informer"
+	testutil "github.com/vanelin/k8s-controller/pkg/testutil"
 )
 
 func TestHandlerManager_Integration_WithRealKubernetes(t *testing.T) {

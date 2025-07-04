@@ -1,4 +1,4 @@
-module github.com/vanelin/k8s-controller.git
+module github.com/vanelin/k8s-controller
 
 go 1.24.4
 

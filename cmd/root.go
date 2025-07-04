@@ -8,7 +8,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
-	"github.com/vanelin/k8s-controller.git/pkg/common/config"
+	"github.com/vanelin/k8s-controller/pkg/common/config"
 )
 
 var (

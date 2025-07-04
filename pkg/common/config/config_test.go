@@ -8,7 +8,7 @@ import (
 
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
-	"github.com/vanelin/k8s-controller.git/pkg/testutil"
+	"github.com/vanelin/k8s-controller/pkg/testutil"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 

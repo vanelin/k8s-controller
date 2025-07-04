@@ -9,7 +9,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/valyala/fasthttp"
-	"github.com/vanelin/k8s-controller.git/pkg/informer"
+	"github.com/vanelin/k8s-controller/pkg/informer"
 )
 
 // DeploymentResponse represents the response structure for deployment endpoints

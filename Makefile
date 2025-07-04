@@ -132,7 +132,7 @@ clean:
 	@echo "Cleaning..."
 	$(GOCLEAN)
 	rm -f $(BINARY_NAME)
-	rm -f coverage.html coverage.out report.xml
+	rm -f coverage.html coverage.out report.xml coverage.xml
 	rm -rf $(BUILD_DIR)
 	@echo "Clean completed"
 

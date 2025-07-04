@@ -12,7 +12,7 @@ import (
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
 
-	testutil "github.com/vanelin/k8s-controller.git/pkg/testutil"
+	testutil "github.com/vanelin/k8s-controller/pkg/testutil"
 )
 
 func TestStartDeploymentInformer(t *testing.T) {
