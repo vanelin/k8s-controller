@@ -112,6 +112,7 @@ func TestLoadConfig_WithEnvFile(t *testing.T) {
 	originalKubeconfig := os.Getenv("KUBECONFIG")
 	originalNamespace := os.Getenv("NAMESPACE")
 	originalInCluster := os.Getenv("IN_CLUSTER")
+	originalMetricPort := os.Getenv("METRIC_PORT")
 
 	if err := os.Unsetenv("PORT"); err != nil {
 		t.Fatalf("Failed to unset PORT env var: %v", err)
@@ -127,6 +128,9 @@ func TestLoadConfig_WithEnvFile(t *testing.T) {
 	}
 	if err := os.Unsetenv("IN_CLUSTER"); err != nil {
 		t.Fatalf("Failed to unset IN_CLUSTER env var: %v", err)
+	}
+	if err := os.Unsetenv("METRIC_PORT"); err != nil {
+		t.Fatalf("Failed to unset METRIC_PORT env var: %v", err)
 	}
 
 	// Restore original values after test
@@ -154,6 +158,11 @@ func TestLoadConfig_WithEnvFile(t *testing.T) {
 		if originalInCluster != "" {
 			if err := os.Setenv("IN_CLUSTER", originalInCluster); err != nil {
 				t.Errorf("Failed to restore IN_CLUSTER env var: %v", err)
+			}
+		}
+		if originalMetricPort != "" {
+			if err := os.Setenv("METRIC_PORT", originalMetricPort); err != nil {
+				t.Errorf("Failed to restore METRIC_PORT env var: %v", err)
 			}
 		}
 	}()
@@ -269,6 +278,7 @@ func TestLoadConfig_WithDefaults(t *testing.T) {
 	originalKubeconfig := os.Getenv("KUBECONFIG")
 	originalNamespace := os.Getenv("NAMESPACE")
 	originalInCluster := os.Getenv("IN_CLUSTER")
+	originalMetricPort := os.Getenv("METRIC_PORT")
 
 	if err := os.Unsetenv("PORT"); err != nil {
 		t.Fatalf("Failed to unset PORT env var: %v", err)
@@ -284,6 +294,9 @@ func TestLoadConfig_WithDefaults(t *testing.T) {
 	}
 	if err := os.Unsetenv("IN_CLUSTER"); err != nil {
 		t.Fatalf("Failed to unset IN_CLUSTER env var: %v", err)
+	}
+	if err := os.Unsetenv("METRIC_PORT"); err != nil {
+		t.Fatalf("Failed to unset METRIC_PORT env var: %v", err)
 	}
 
 	// Restore original values after test
@@ -311,6 +324,11 @@ func TestLoadConfig_WithDefaults(t *testing.T) {
 		if originalInCluster != "" {
 			if err := os.Setenv("IN_CLUSTER", originalInCluster); err != nil {
 				t.Errorf("Failed to restore IN_CLUSTER env var: %v", err)
+			}
+		}
+		if originalMetricPort != "" {
+			if err := os.Setenv("METRIC_PORT", originalMetricPort); err != nil {
+				t.Errorf("Failed to restore METRIC_PORT env var: %v", err)
 			}
 		}
 	}()
