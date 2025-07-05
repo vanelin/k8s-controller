@@ -17,6 +17,7 @@ jobs:
       id-token: write
     env:
       SERVER_PORT: 8080
+      METRIC_PORT: 8081
       LOGGING_LEVEL: info
       KUBECONFIG: ~/.kube/config
       NAMESPACE: default
@@ -43,7 +44,12 @@ jobs:
 
       - name: Build binaries
         run: |
-          make build-linux VERSION=${{ steps.version.outputs.version }} SERVER_PORT=$SERVER_PORT LOGGING_LEVEL=$LOGGING_LEVEL KUBECONFIG=$KUBECONFIG
+          make build-linux \
+            VERSION=${{ steps.version.outputs.version }} \
+            SERVER_PORT=$SERVER_PORT \
+            METRIC_PORT=$METRIC_PORT \
+            LOGGING_LEVEL=$LOGGING_LEVEL \
+            KUBECONFIG=$KUBECONFIG
           mkdir -p release-files
           tar -czvf release-files/k8s-controller-linux-amd64.tar.gz build/k8s-controller-linux-amd64
           tar -czvf release-files/k8s-controller-linux-arm64.tar.gz build/k8s-controller-linux-arm64
@@ -143,6 +149,7 @@ jobs:
           build-args: |
             VERSION=${{ steps.version.outputs.version }}
             SERVER_PORT=${{ env.SERVER_PORT }}
+            METRIC_PORT=${{ env.METRIC_PORT }}
             LOGGING_LEVEL=${{ env.LOGGING_LEVEL }}
             KUBECONFIG=${{ env.KUBECONFIG }}
             NAMESPACE=${{ env.NAMESPACE }}
