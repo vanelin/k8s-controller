@@ -21,12 +21,16 @@ func TestDeploymentReconciler_BasicFlow(t *testing.T) {
 	err := AddDeploymentControllerWithName(mgr, "deployment-basic")
 	require.NoError(t, err)
 
+	// Create a context with cancellation for proper cleanup
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	go func() {
-		_ = mgr.Start(context.Background())
+		_ = mgr.Start(ctx)
 	}()
 
 	ns := "default"
-	ctx := context.Background()
+	testCtx := context.Background()
 	name := "test-deployment"
 
 	dep := &appsv1.Deployment{
@@ -45,7 +49,7 @@ func TestDeploymentReconciler_BasicFlow(t *testing.T) {
 			},
 		},
 	}
-	if err := k8sClient.Create(ctx, dep); err != nil {
+	if err := k8sClient.Create(testCtx, dep); err != nil {
 		t.Fatalf("Failed to create Deployment: %v", err)
 	}
 
@@ -54,7 +58,7 @@ func TestDeploymentReconciler_BasicFlow(t *testing.T) {
 
 	// Just check the Deployment still exists (reconcile didn't error or delete it)
 	var got appsv1.Deployment
-	err = k8sClient.Get(ctx, client.ObjectKey{Name: name, Namespace: ns}, &got)
+	err = k8sClient.Get(testCtx, client.ObjectKey{Name: name, Namespace: ns}, &got)
 	require.NoError(t, err)
 }
 
@@ -66,12 +70,16 @@ func TestDeploymentReconciler_MultipleDeployments(t *testing.T) {
 	err := AddDeploymentControllerWithName(mgr, "deployment-multiple")
 	require.NoError(t, err)
 
+	// Create a context with cancellation for proper cleanup
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	go func() {
-		_ = mgr.Start(context.Background())
+		_ = mgr.Start(ctx)
 	}()
 
 	ns := "default"
-	ctx := context.Background()
+	testCtx := context.Background()
 
 	// Create multiple deployments
 	deployments := []string{"deployment-1", "deployment-2", "deployment-3"}
@@ -93,7 +101,7 @@ func TestDeploymentReconciler_MultipleDeployments(t *testing.T) {
 				},
 			},
 		}
-		if err := k8sClient.Create(ctx, dep); err != nil {
+		if err := k8sClient.Create(testCtx, dep); err != nil {
 			t.Fatalf("Failed to create Deployment %s: %v", name, err)
 		}
 	}
@@ -104,7 +112,7 @@ func TestDeploymentReconciler_MultipleDeployments(t *testing.T) {
 	// Check all deployments still exist
 	for _, name := range deployments {
 		var got appsv1.Deployment
-		err = k8sClient.Get(ctx, client.ObjectKey{Name: name, Namespace: ns}, &got)
+		err = k8sClient.Get(testCtx, client.ObjectKey{Name: name, Namespace: ns}, &got)
 		require.NoError(t, err)
 		require.Equal(t, name, got.Name)
 		require.Equal(t, int32(2), *got.Spec.Replicas)
@@ -119,12 +127,16 @@ func TestDeploymentReconciler_UpdateDeployment(t *testing.T) {
 	err := AddDeploymentControllerWithName(mgr, "deployment-update")
 	require.NoError(t, err)
 
+	// Create a context with cancellation for proper cleanup
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	go func() {
-		_ = mgr.Start(context.Background())
+		_ = mgr.Start(ctx)
 	}()
 
 	ns := "default"
-	ctx := context.Background()
+	testCtx := context.Background()
 	name := "update-test-deployment"
 
 	// Create initial deployment
@@ -144,7 +156,7 @@ func TestDeploymentReconciler_UpdateDeployment(t *testing.T) {
 			},
 		},
 	}
-	if err := k8sClient.Create(ctx, dep); err != nil {
+	if err := k8sClient.Create(testCtx, dep); err != nil {
 		t.Fatalf("Failed to create Deployment: %v", err)
 	}
 
@@ -153,7 +165,7 @@ func TestDeploymentReconciler_UpdateDeployment(t *testing.T) {
 
 	// Update the deployment
 	var got appsv1.Deployment
-	err = k8sClient.Get(ctx, client.ObjectKey{Name: name, Namespace: ns}, &got)
+	err = k8sClient.Get(testCtx, client.ObjectKey{Name: name, Namespace: ns}, &got)
 	require.NoError(t, err)
 
 	// Update replicas and image
@@ -161,7 +173,7 @@ func TestDeploymentReconciler_UpdateDeployment(t *testing.T) {
 	got.Spec.Replicas = &newReplicas
 	got.Spec.Template.Spec.Containers[0].Image = "nginx:1.21"
 
-	if err := k8sClient.Update(ctx, &got); err != nil {
+	if err := k8sClient.Update(testCtx, &got); err != nil {
 		t.Fatalf("Failed to update Deployment: %v", err)
 	}
 
@@ -170,7 +182,7 @@ func TestDeploymentReconciler_UpdateDeployment(t *testing.T) {
 
 	// Verify the update was processed
 	var updated appsv1.Deployment
-	err = k8sClient.Get(ctx, client.ObjectKey{Name: name, Namespace: ns}, &updated)
+	err = k8sClient.Get(testCtx, client.ObjectKey{Name: name, Namespace: ns}, &updated)
 	require.NoError(t, err)
 	require.Equal(t, int32(3), *updated.Spec.Replicas)
 	require.Equal(t, "nginx:1.21", updated.Spec.Template.Spec.Containers[0].Image)
