@@ -8,25 +8,31 @@ import (
 	"sync"
 	"syscall"
 
+	zerologr "github.com/go-logr/zerologr"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/valyala/fasthttp"
 	"github.com/vanelin/k8s-controller/pkg/common/utils"
+	"github.com/vanelin/k8s-controller/pkg/ctrl"
 	"github.com/vanelin/k8s-controller/pkg/handlers"
 	"github.com/vanelin/k8s-controller/pkg/informer"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	ctrlruntime "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 )
 
 var serverPort string
 var serverKubeconfig string
 var serverInCluster bool
 var serverNamespace string
+var serverMetricPort string
 
 var serverCmd = &cobra.Command{
 	Use:   "server",
-	Short: "Start a FastHTTP server with Deployment informer",
+	Short: "Start a FastHTTP server with Deployment informer and controller-runtime",
 	Run: func(cmd *cobra.Command, args []string) {
 		// Create context with cancel for graceful shutdown
 		ctx, cancel := context.WithCancel(context.Background())
@@ -45,6 +51,29 @@ var serverCmd = &cobra.Command{
 		if logLevel != "" {
 			cfg.LoggingLevel = logLevel
 		}
+		if serverMetricPort != "" {
+			cfg.MetricPort = serverMetricPort
+		}
+
+		// Parse namespaces to watch from --namespace (comma-separated)
+		namespacesToWatch := []string{"default"}
+		if serverNamespace != "" {
+			// Parse CLI flag (comma-separated)
+			namespacesToWatch = strings.Split(serverNamespace, ",")
+			for i, ns := range namespacesToWatch {
+				namespacesToWatch[i] = strings.TrimSpace(ns)
+			}
+			// Update cfg.Namespace for display
+			cfg.Namespace = serverNamespace
+		} else if appConfig.Namespace != "" {
+			// Parse environment variable (comma-separated)
+			namespacesToWatch = strings.Split(appConfig.Namespace, ",")
+			for i, ns := range namespacesToWatch {
+				namespacesToWatch[i] = strings.TrimSpace(ns)
+			}
+			// Update cfg.Namespace for display
+			cfg.Namespace = appConfig.Namespace
+		}
 
 		// Print updated configuration
 		cfg.PrintConfig()
@@ -61,22 +90,6 @@ var serverCmd = &cobra.Command{
 		inCluster := serverInCluster
 		if !inCluster {
 			inCluster = appConfig.InCluster
-		}
-
-		// Parse namespaces to watch from --namespace (comma-separated)
-		namespacesToWatch := []string{"default"}
-		if serverNamespace != "" {
-			// Parse CLI flag (comma-separated)
-			namespacesToWatch = strings.Split(serverNamespace, ",")
-			for i, ns := range namespacesToWatch {
-				namespacesToWatch[i] = strings.TrimSpace(ns)
-			}
-		} else if appConfig.Namespace != "" {
-			// Parse environment variable (comma-separated)
-			namespacesToWatch = strings.Split(appConfig.Namespace, ",")
-			for i, ns := range namespacesToWatch {
-				namespacesToWatch[i] = strings.TrimSpace(ns)
-			}
 		}
 
 		var informerManager *informer.DeploymentInformerManager
@@ -110,6 +123,36 @@ var serverCmd = &cobra.Command{
 			handlerManager = handlers.NewHandlerManager(informerManager, appVersion)
 
 			log.Info().Strs("namespaces", namespacesToWatch).Msg("Started informers for namespaces")
+
+			// Start controller-runtime manager and controller
+			metricPort := cfg.MetricPort
+			if metricPort == "" {
+				metricPort = "8081" // fallback default
+			}
+			// Use zerologr for controller-runtime
+			ctrlLogger := zerologr.New(&log.Logger)
+			ctrlruntime.SetLogger(ctrlLogger)
+			mgr, err := ctrlruntime.NewManager(ctrlruntime.GetConfigOrDie(), manager.Options{
+				Logger: ctrlLogger,
+				Metrics: metricsserver.Options{
+					BindAddress: ":" + metricPort,
+				},
+			})
+			if err != nil {
+				log.Error().Err(err).Msg("Failed to create controller-runtime manager")
+				os.Exit(1)
+			}
+			if err := ctrl.AddDeploymentControllerWithNameAndNamespaces(mgr, "deployment", namespacesToWatch); err != nil {
+				log.Error().Err(err).Msg("Failed to add deployment controller")
+				os.Exit(1)
+			}
+			go func() {
+				log.Info().Str("metrics_port", metricPort).Msg("Starting controller-runtime manager...")
+				if err := mgr.Start(cmd.Context()); err != nil {
+					log.Error().Err(err).Msg("Manager exited with error")
+					cancel() // Signal other goroutines to stop
+				}
+			}()
 		} else {
 			log.Info().Msg("Skipping Deployment informer - no Kubernetes configuration provided")
 			// Create empty informer manager for handlers
@@ -188,4 +231,5 @@ func init() {
 	serverCmd.Flags().StringVar(&serverKubeconfig, "kubeconfig", "", "Path to the kubeconfig file (default: ~/.kube/config)")
 	serverCmd.Flags().BoolVar(&serverInCluster, "in-cluster", false, "Use in-cluster Kubernetes config (default: false)")
 	serverCmd.Flags().StringVarP(&serverNamespace, "namespace", "n", "", "Namespace(s) to watch for Deployments (comma-separated, default: default)")
+	serverCmd.Flags().StringVar(&serverMetricPort, "metric-port", "", "Port to run the controller-runtime metrics server on (overrides env vars and config, default: 8081)")
 }

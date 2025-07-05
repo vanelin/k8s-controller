@@ -15,16 +15,22 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 FROM --platform=${TARGETPLATFORM} gcr.io/distroless/static-debian12
 WORKDIR /
 COPY --from=builder /app/k8s-controller .
+
 ARG SERVER_PORT=8080
+ARG METRIC_PORT=8081
 ARG LOGGING_LEVEL=debug
 ARG KUBECONFIG
 ARG NAMESPACE=default
 ARG IN_CLUSTER=false
+
 ENV PORT=$SERVER_PORT
-ENV LOGGING_LEVEL=$LOGGING_LEVEL
+ENV METRIC_PORT=$METRIC_PORT
 ENV KUBECONFIG=$KUBECONFIG
-ENV NAMESPACE=$NAMESPACE
 ENV IN_CLUSTER=$IN_CLUSTER
+ENV NAMESPACE=$NAMESPACE
+ENV LOGGING_LEVEL=$LOGGING_LEVEL
+
 LABEL org.opencontainers.image.source=https://github.com/vanelin/k8s-controller
-EXPOSE 8080
+
+EXPOSE 8080 8081
 ENTRYPOINT ["/k8s-controller"]

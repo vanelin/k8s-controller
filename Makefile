@@ -13,6 +13,7 @@ TARGETOS ?=linux
 # Viper envs
 CONFIG_PATH=pkg/common/envs/.env
 SERVER_PORT ?=8080
+METRIC_PORT ?=8081
 LOGGING_LEVEL ?=debug
 KUBECONFIG ?=~/.kube/config
 IN_CLUSTER ?=false
@@ -84,9 +85,9 @@ $(ENVTEST): $(LOCALBIN)
 
 
 # Build flags
-BUILD_FLAGS = -v -o $(APP) -ldflags "-X github.com/vanelin/$(APP).git/cmd.appVersion=$(APP_VERSION)"
+BUILD_FLAGS = -v -o $(APP) -ldflags "-X github.com/vanelin/$(APP)/cmd.appVersion=$(APP_VERSION)"
 
-.PHONY: all build build-linux clean test test-coverage format fmt get lint server list list-namespace test-informer check-env dev-server dev docker-build docker-build-multi docker-clean clean-all push help vulncheck version-info envtest
+.PHONY: all build build-linux clean test test-coverage format fmt get lint server list list-namespace test-informer test-ctrl check-env dev-server dev docker-build docker-build-multi docker-clean clean-all push help vulncheck version-info envtest
 
 # Default target
 all: clean build
@@ -156,7 +157,13 @@ test: envtest
 test-informer: envtest
 	@echo "Testing Deployment informer with envtest..."
 	@echo "Using KUBEBUILDER_ASSETS: $(shell $(ENVTEST) use --arch $(TARGETARCH) --bin-dir $(LOCALBIN) -p path)"
-	USE_EXISTING_CLUSTER=$(USE_EXISTING_CLUSTER) KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use --arch $(TARGETARCH) --bin-dir $(LOCALBIN) -p path)" go test ./pkg/informer -run TestStartDeploymentInformer -v
+	USE_EXISTING_CLUSTER=$(USE_EXISTING_CLUSTER) KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use --arch $(TARGETARCH) --bin-dir $(LOCALBIN) -p path)" go test ./pkg/informer -v
+
+# Test Deployment controller with envtest
+test-ctrl: envtest
+	@echo "Testing Deployment controller with envtest..."
+	@echo "Using KUBEBUILDER_ASSETS: $(shell $(ENVTEST) use --arch $(TARGETARCH) --bin-dir $(LOCALBIN) -p path)"
+	USE_EXISTING_CLUSTER=$(USE_EXISTING_CLUSTER) KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use --arch $(TARGETARCH) --bin-dir $(LOCALBIN) -p path)" go test ./pkg/ctrl -v
 
 # Run all tests with coverage
 test-coverage: envtest
@@ -191,6 +198,7 @@ check-env:
 		echo "# Server Configuration" > $(CONFIG_PATH); \
 		echo "PORT=$(SERVER_PORT)" >> $(CONFIG_PATH); \
 		echo "LOGGING_LEVEL=$(LOGGING_LEVEL)" >> $(CONFIG_PATH); \
+		echo "METRIC_PORT=$(METRIC_PORT)" >> $(CONFIG_PATH); \
 		echo "" >> $(CONFIG_PATH); \
 		echo "# Kubernetes Configuration" >> $(CONFIG_PATH); \
 		echo "NAMESPACE=$(NAMESPACE)" >> $(CONFIG_PATH); \
@@ -247,6 +255,7 @@ docker-build:
 		--build-arg NAMESPACE=$(NAMESPACE) \
 		--build-arg KUBECONFIG=$(KUBECONFIG) \
 		--build-arg IN_CLUSTER=$(IN_CLUSTER) \
+		--build-arg METRIC_PORT=$(METRIC_PORT) \
 		--load \
 		-t $(REGISTRY)/$(REPOSITORY)/$(APP):$(DOCKER_TAG)-$(TARGETOS)-$(TARGETARCH) \
 		-t $(REGISTRY)/$(REPOSITORY)/$(APP):latest-$(TARGETOS)-$(TARGETARCH) \
@@ -264,6 +273,7 @@ docker-build-multi:
 		--build-arg NAMESPACE=$(NAMESPACE) \
 		--build-arg KUBECONFIG=$(KUBECONFIG) \
 		--build-arg IN_CLUSTER=$(IN_CLUSTER) \
+		--build-arg METRIC_PORT=$(METRIC_PORT) \
 		--provenance=false \
 		--push \
 		-t $(REGISTRY)/$(REPOSITORY)/$(APP):$(DOCKER_TAG) \
@@ -320,6 +330,7 @@ help:
 	@echo "  test           - Run all tests with envtest (unit + Kubernetes integration)"
 	@echo "  test-coverage  - Run all tests with coverage report and XML output"
 	@echo "  test-informer  - Test Deployment informer with envtest (interactive)"
+	@echo "  test-ctrl      - Test Deployment controller with envtest"
 	@echo "  envtest        - Download setup-envtest tool for Kubernetes testing"
 	@echo ""
 	@echo "Dependency commands:"
