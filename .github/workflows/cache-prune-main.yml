@@ -1,4 +1,4 @@
-name: Smart cache cleanup for main branch - optimized
+name: Smart cache cleanup - based on last access
 on:
   workflow_run:
     workflows: ["CI"]
@@ -9,11 +9,10 @@ on:
       cleanup_mode:
         description: 'Main branch cleanup mode'
         required: true
-        default: 'keep_last'
+        default: 'flush_unused_14d'
         type: choice
         options:
-          - keep_last
-          - keep_last_10
+          - flush_unused_14d
           - flush_all
 
 jobs:
@@ -26,44 +25,52 @@ jobs:
       actions: write
       contents: read
     steps:
-      - name: Optimized main branch cache cleanup
+      - name: Smart cache cleanup based on usage
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           REF: refs/heads/main
-          CLEANUP_MODE: ${{ github.event.inputs.cleanup_mode || 'keep_last' }}
+          CLEANUP_MODE: ${{ github.event.inputs.cleanup_mode || 'flush_unused_14d' }}
         run: |
           set +e
           
           echo "::group::Cache cleanup configuration"
           
-          # Determine how many caches to keep based on mode
           case "$CLEANUP_MODE" in
-            "keep_last")
-              keep_count=1
-              echo "Mode: Keep only the newest cache"
-              ;;
-            "keep_last_10")
-              keep_count=10
-              echo "Mode: Keep 10 newest caches"
+            "flush_unused_14d")
+              echo "Mode: Delete caches not accessed for 14+ days"
+              echo "Logic: Keeps actively used caches regardless of creation date"
+              days_ago=14
               ;;
             "flush_all")
-              keep_count=0
               echo "Mode: Delete ALL caches"
+              days_ago=0
               ;;
             *)
-              keep_count=1
-              echo "Unknown mode, defaulting to keep_last"
+              echo "Unknown mode, defaulting to flush_unused_14d"
+              CLEANUP_MODE="flush_unused_14d"
+              days_ago=14
               ;;
           esac
           
-          echo "Will keep $keep_count newest cache(s)"
+          if [[ "$days_ago" -gt 0 ]]; then
+            # Calculate cutoff date - more robust format
+            cutoff_date=$(date -d "$days_ago days ago" -u '+%Y-%m-%dT%H:%M:%SZ')
+            cutoff_epoch=$(date -d "$days_ago days ago" +%s)
+            echo "Cutoff date: $cutoff_date"
+            echo "Will preserve: Caches accessed within last $days_ago days"
+            echo "Will delete: Caches not accessed since $cutoff_date"
+          fi
+          
           echo "::endgroup::"
           
-          echo "::group::Analyzing current caches"
+          echo "::group::Analyzing cache usage patterns"
           
-          # Get total count first
-          total_caches=$(gh cache list --ref "$REF" --limit 2000 --json id --jq '. | length')
+          # Get all caches with access info
+          all_caches=$(gh cache list --ref "$REF" --limit 2000 \
+            --json id,key,createdAt,lastAccessedAt,sizeInBytes)
+          
+          total_caches=$(echo "$all_caches" | jq '. | length')
           echo "Total caches in main branch: $total_caches"
           
           if [ "$total_caches" -eq 0 ]; then
@@ -71,52 +78,103 @@ jobs:
             exit 0
           fi
           
-          # Show what we'll keep (for logging)
-          if [[ "$keep_count" -gt 0 ]]; then
-            echo "Caches that will be KEPT:"
-            gh cache list --ref "$REF" --limit "$keep_count" \
-              --sort last_accessed_at --order desc \
-              --json key,lastAccessedAt,sizeInBytes \
-              --jq '.[] | "  \(.key) (accessed: \(.lastAccessedAt), size: \(.sizeInBytes // "unknown"))"'
-            echo ""
+          if [[ "$days_ago" -gt 0 ]]; then
+            # Analyze usage patterns
+            echo "Cache usage analysis:"
+            
+            recently_used=$(echo "$all_caches" | jq --arg cutoff "$cutoff_date" \
+              '[.[] | select(.lastAccessedAt >= $cutoff)] | length')
+            unused_old=$(echo "$all_caches" | jq --arg cutoff "$cutoff_date" \
+              '[.[] | select(.lastAccessedAt < $cutoff)] | length')
+            
+            echo "  Recently used (last $days_ago days): $recently_used caches"
+            echo "  Unused/old (>$days_ago days): $unused_old caches"
+            
+            # Show examples of actively used caches (will be kept)
+            if [ "$recently_used" -gt 0 ]; then
+              echo ""
+              echo "Examples of ACTIVE caches (will be KEPT):"
+              echo "$all_caches" | jq -r --arg cutoff "$cutoff_date" \
+                '.[] | select(.lastAccessedAt >= $cutoff) | 
+                "\(.key | .[0:60])" + (if (.key | length) > 60 then "..." else "" end) + 
+                " (last used: \(.lastAccessedAt))"' | head -5
+            fi
+            
+            # Show examples of unused caches (will be deleted)
+            if [ "$unused_old" -gt 0 ]; then
+              echo ""
+              echo "Examples of UNUSED caches (will be DELETED):"
+              echo "$all_caches" | jq -r --arg cutoff "$cutoff_date" \
+                '.[] | select(.lastAccessedAt < $cutoff) | 
+                "\(.key | .[0:60])" + (if (.key | length) > 60 then "..." else "" end) + 
+                " (last used: \(.lastAccessedAt))"' | head -5
+            fi
           fi
           
           echo "::endgroup::"
           
-          echo "::group::Deleting old caches"
+          echo "::group::Determining caches to delete"
           
-          # Get cache IDs to delete
-          if [[ "$keep_count" -eq 0 ]]; then
-            # Delete all caches
-            cache_ids=$(gh cache list --ref "$REF" --limit 2000 --json id --jq '.[].id')
+          if [[ "$CLEANUP_MODE" == "flush_all" ]]; then
+            echo "Getting ALL cache IDs for deletion..."
+            cache_ids=$(echo "$all_caches" | jq -r '.[].id')
+            caches_to_delete=$total_caches
+            
           else
-            # Keep newest, delete rest - use proper sorting
-            cache_ids=$(gh cache list --ref "$REF" --limit 2000 \
-              --sort last_accessed_at --order desc \
-              --json id \
-              --jq ".[$keep_count:] | .[].id")
+            echo "Getting unused cache IDs (not accessed for $days_ago+ days)..."
+            
+            # Get caches not accessed within the cutoff period
+            unused_caches=$(echo "$all_caches" | jq --arg cutoff "$cutoff_date" \
+              '[.[] | select(.lastAccessedAt < $cutoff)]')
+            
+            cache_ids=$(echo "$unused_caches" | jq -r '.[].id')
+            caches_to_delete=$(echo "$unused_caches" | jq '. | length')
+            
+            # Calculate size of unused caches
+            if [ "$caches_to_delete" -gt 0 ]; then
+              total_unused_size=$(echo "$unused_caches" | jq '[.[].sizeInBytes // 0] | add')
+              if [ "$total_unused_size" != "null" ] && [ "$total_unused_size" -gt 0 ]; then
+                size_mb=$((total_unused_size / 1024 / 1024))
+                echo "Total size of unused caches: ~${size_mb}MB"
+              fi
+            fi
           fi
           
-          if [ -z "$cache_ids" ]; then
-            echo "No caches to delete"
+          echo "Found $caches_to_delete cache(s) to delete"
+          echo "::endgroup::"
+          
+          echo "::group::Deleting unused caches"
+          
+          if [ "$caches_to_delete" -eq 0 ]; then
+            echo "No unused caches to delete - all caches are actively used!"
             deleted_count=0
           else
-            echo "Deleting old caches..."
+            echo "Deleting $caches_to_delete unused cache(s)..."
             
-            # Convert to array and process
             deleted_count=0
+            failed_count=0
+            
             while IFS= read -r cache_id; do
               if [ -n "$cache_id" ]; then
-                echo "Deleting cache: $cache_id"
+                # Get cache name for better logging
+                cache_name=$(echo "$all_caches" | jq -r --arg id "$cache_id" \
+                  '.[] | select(.id == $id) | .key | .[0:50]' 2>/dev/null)
+                
+                echo "Deleting unused cache: ${cache_name:-$cache_id}"
                 if gh cache delete "$cache_id"; then
                   ((deleted_count++))
                 else
                   echo "Failed to delete cache: $cache_id"
+                  ((failed_count++))
                 fi
               fi
             done <<< "$cache_ids"
             
-            echo "Successfully deleted $deleted_count caches"
+            echo "Deletion results:"
+            echo "  Successfully deleted: $deleted_count unused caches"
+            if [ "$failed_count" -gt 0 ]; then
+              echo "  Failed to delete: $failed_count caches"
+            fi
           fi
           
           echo "::endgroup::"
@@ -126,16 +184,35 @@ jobs:
           echo "Cache cleanup summary:"
           echo "  Mode: $CLEANUP_MODE"
           echo "  Total caches before: $total_caches"
-          echo "  Caches deleted: $deleted_count"
-          echo "  Caches remaining: $remaining_caches"
-          echo "  Target keep count: $keep_count"
+          echo "  Unused caches deleted: $deleted_count"
+          echo "  Active caches preserved: $remaining_caches"
+          
+          if [[ "$CLEANUP_MODE" == "flush_unused_14d" ]]; then
+            echo "  Criteria: Keep caches accessed within last $days_ago days"
+            echo "  Benefit: All actively used caches are preserved for fast builds"
+          fi
           
           if [ "$deleted_count" -gt 0 ]; then
-            echo "::notice::Successfully deleted $deleted_count old caches from main branch (mode: $CLEANUP_MODE)"
+            echo "::notice::Successfully deleted $deleted_count unused caches, preserved $remaining_caches active caches"
           else
-            echo "::notice::No old caches found to delete in main branch"
+            echo "::notice::All caches are actively used - nothing to delete"
           fi
           
           # Verify final state
-          final_count=$(gh cache list --ref "$REF" --limit 100 --json id --jq '. | length')
+          echo "::group::Final state verification"
+          final_count=$(gh cache list --ref "$REF" --limit 50 --json id --jq '. | length')
           echo "Verification: $final_count cache(s) remaining in main branch"
+          
+          if [ "$final_count" -gt 0 ] && [ "$final_count" -le 10 ]; then
+            echo "All remaining caches (recently used):"
+            gh cache list --ref "$REF" --limit 10 \
+              --json key,lastAccessedAt,sizeInBytes \
+              --jq '.[] | "  \(.key | .[0:50])" + (if (.key | length) > 50 then "..." else "" end) + " (used: \(.lastAccessedAt))"'
+          elif [ "$final_count" -gt 10 ]; then
+            echo "Sample of remaining caches (most recently used):"
+            gh cache list --ref "$REF" --limit 5 \
+              --sort last_accessed_at --order desc \
+              --json key,lastAccessedAt \
+              --jq '.[] | "  \(.key | .[0:50])" + (if (.key | length) > 50 then "..." else "" end) + " (used: \(.lastAccessedAt))"'
+          fi
+          echo "::endgroup::"
