@@ -36,6 +36,8 @@ env:
   KUBECONFIG: ~/.kube/config
   NAMESPACE: default
   IN_CLUSTER: false
+  ENABLE_LEADER_ELECTION: true
+  LEADER_ELECTION_NAMESPACE: default
 
 jobs:
   codeql:
@@ -230,6 +232,8 @@ jobs:
             KUBECONFIG=${{ env.KUBECONFIG }}
             NAMESPACE=${{ env.NAMESPACE }}
             IN_CLUSTER=${{ env.IN_CLUSTER }}
+            ENABLE_LEADER_ELECTION=${{ env.ENABLE_LEADER_ELECTION }}
+            LEADER_ELECTION_NAMESPACE=${{ env.LEADER_ELECTION_NAMESPACE }}
 
       - name: Trivy Scan Docker Image
         uses: aquasecurity/trivy-action@0.31.0
