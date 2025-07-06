@@ -76,8 +76,8 @@ jobs:
             echo "Caches that will be KEPT:"
             gh cache list --ref "$REF" --limit "$keep_count" \
               --sort last_accessed_at --order desc \
-              --json key,lastAccessedAt,size \
-              --jq '.[] | "  \(.key) (accessed: \(.lastAccessedAt), size: \(.size // "unknown"))"'
+              --json key,lastAccessedAt,sizeInBytes \
+              --jq '.[] | "  \(.key) (accessed: \(.lastAccessedAt), size: \(.sizeInBytes // "unknown"))"'
             echo ""
           fi
           
@@ -94,7 +94,7 @@ jobs:
             cache_ids=$(gh cache list --ref "$REF" --limit 2000 \
               --sort last_accessed_at --order desc \
               --json id \
-              --jq --argjson keep "$keep_count" '.[$keep:] | .[].id')
+              --jq ".[$keep_count:] | .[].id")
           fi
           
           if [ -z "$cache_ids" ]; then
