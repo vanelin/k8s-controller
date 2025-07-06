@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/vanelin/k8s-controller
-  tag: "0.1.3" # This is set by CI to the Git tag or commit SHA
+  tag: "0.1.4" # This is set by CI to the Git tag or commit SHA
   pullPolicy: IfNotPresent
 # Node selector for multi-arch support
 nodeSelector: {}
