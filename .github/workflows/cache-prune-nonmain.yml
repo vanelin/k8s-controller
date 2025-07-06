@@ -19,11 +19,11 @@ on:
           - all_prs
           - everything
       branch:
-        description: 'Branch name (for single mode branch cleanup)'
+        description: 'Branch name (for single branch cleanup)'
         required: false
         default: ''
       pr:
-        description: 'PR number (for single mode PR cleanup)'
+        description: 'PR number (for single PR cleanup)'
         required: false
         default: ''
 
@@ -36,83 +36,141 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       actions: write
+      contents: read
     steps:
-      - name: Find refs to purge
-        id: refs
-        run: |
-          # For manual run, determine what to clean based on mode
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            mode="${{ github.event.inputs.cleanup_mode }}"
-            
-            case "$mode" in
-              "single")
-                if [[ -n "${{ github.event.inputs.pr }}" ]]; then
-                  echo "refs=refs/pull/${{ github.event.inputs.pr }}/merge" >> $GITHUB_OUTPUT
-                elif [[ -n "${{ github.event.inputs.branch }}" ]]; then
-                  echo "refs=refs/heads/${{ github.event.inputs.branch }}" >> $GITHUB_OUTPUT
-                else
-                  echo "refs=" >> $GITHUB_OUTPUT
-                fi
-                ;;
-              "all_branches")
-                echo "refs=all_branches" >> $GITHUB_OUTPUT
-                ;;
-              "all_prs")
-                echo "refs=all_prs" >> $GITHUB_OUTPUT
-                ;;
-              "everything")
-                echo "refs=everything" >> $GITHUB_OUTPUT
-                ;;
-            esac
-          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            echo "refs=refs/pull/${{ github.event.pull_request.number }}/merge" >> $GITHUB_OUTPUT
-          else
-            echo "refs=refs/heads/${{ github.event.workflow_run.head_branch }}" >> $GITHUB_OUTPUT
-          fi
-      
-      - name: Delete caches based on mode
+      - name: Checkout for branch info
+        if: github.event_name == 'workflow_dispatch' && contains(github.event.inputs.cleanup_mode, 'all_branches')
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Cleanup based on mode
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          REFS: ${{ steps.refs.outputs.refs }}
+          CLEANUP_MODE: ${{ github.event.inputs.cleanup_mode }}
+          BRANCH_INPUT: ${{ github.event.inputs.branch }}
+          PR_INPUT: ${{ github.event.inputs.pr }}
         run: |
-          if [ -z "$REFS" ]; then
-            echo "No refs provided. Please specify a branch or PR number for single mode."
-            exit 1
-          fi
+          set +e
+          total_deleted=0
           
-          case "$REFS" in
-            "all_branches")
-              echo "Purging caches for ALL branches except main"
-              cache_ids=$(gh cache list --json id,ref --jq '.[] | select(.ref | startswith("refs/heads/") and (.ref != "refs/heads/main")) | .id')
-              ;;
-            "all_prs")
-              echo "Purging caches for ALL PRs"
-              cache_ids=$(gh cache list --json id,ref --jq '.[] | select(.ref | startswith("refs/pull/")) | .id')
-              ;;
-            "everything")
-              echo "Purging ALL caches except main"
-              cache_ids=$(gh cache list --json id,ref --jq '.[] | select(.ref != "refs/heads/main") | .id')
-              ;;
-            *)
-              echo "Purging caches for specific ref: $REFS"
-              cache_ids=$(gh cache list --ref "$REFS" --json id --jq '.[].id')
-              ;;
-          esac
-          
-          if [ -z "$cache_ids" ]; then
-            echo "No caches found for the specified criteria"
-            exit 0
-          fi
-          
-          deleted_count=0
-          echo "$cache_ids" | while read -r id; do
-            if [ -n "$id" ]; then
-              echo "Deleting cache: $id"
-              if gh cache delete "$id"; then
-                ((deleted_count++))
-              fi
+          # Function to delete caches for a ref
+          delete_caches_for_ref() {
+            local ref="$1"
+            echo "::group::Cleaning caches for $ref"
+            
+            cache_ids=$(gh cache list --ref "$ref" --json id --jq '.[].id')
+            
+            if [ -z "$cache_ids" ]; then
+              echo "No caches found for $ref"
+            else
+              ref_deleted=0
+              echo "$cache_ids" | while read -r id; do
+                if [ -n "$id" ]; then
+                  echo "Deleting cache: $id"
+                  if gh cache delete "$id"; then
+                    ((ref_deleted++))
+                  fi
+                fi
+              done
+              
+              actual_deleted=$(echo "$cache_ids" | wc -l)
+              total_deleted=$((total_deleted + actual_deleted))
+              echo "Deleted $actual_deleted caches for $ref"
             fi
-          done
+            echo "::endgroup::"
+          }
+          
+          # Handle different cleanup modes
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            case "$CLEANUP_MODE" in
+              "single")
+                if [[ -n "$PR_INPUT" ]]; then
+                  ref="refs/pull/$PR_INPUT/merge"
+                  delete_caches_for_ref "$ref"
+                elif [[ -n "$BRANCH_INPUT" ]]; then
+                  ref="refs/heads/$BRANCH_INPUT"
+                  delete_caches_for_ref "$ref"
+                else
+                  echo "Please specify a branch or PR number for single cleanup"
+                  exit 1
+                fi
+                ;;
+                
+              "all_branches")
+                echo "Cleaning ALL branch caches except main"
+                
+                # Get all remote branch refs except main
+                all_branches=$(git for-each-ref --format='%(refname:short)' refs/remotes/origin/ | grep -v 'origin/main' | sed 's|origin/||')
+                
+                if [ -z "$all_branches" ]; then
+                  echo "No feature branches found"
+                else
+                  echo "Found branches to clean:"
+                  echo "$all_branches"
+                  
+                  for branch in $all_branches; do
+                    ref="refs/heads/$branch"
+                    delete_caches_for_ref "$ref"
+                  done
+                fi
+                ;;
+                
+              "all_prs")
+                echo "Cleaning ALL PR caches"
+                
+                # Get all PR cache refs
+                pr_refs=$(gh cache list --limit 500 --json ref --jq '.[] | select(.ref | startswith("refs/pull/")) | .ref' | sort -u)
+                
+                if [ -z "$pr_refs" ]; then
+                  echo "No PR caches found"
+                else
+                  echo "Found PR refs to clean:"
+                  echo "$pr_refs"
+                  
+                  echo "$pr_refs" | while read -r ref; do
+                    if [ -n "$ref" ]; then
+                      delete_caches_for_ref "$ref"
+                    fi
+                  done
+                fi
+                ;;
+                
+              "everything")
+                echo "Cleaning ALL caches except main branch caches"
+                
+                # Get all cache refs except main
+                all_refs=$(gh cache list --limit 1000 --json ref --jq '.[] | select(.ref != "refs/heads/main") | .ref' | sort -u)
+                
+                if [ -z "$all_refs" ]; then
+                  echo "No non-main caches found"
+                else
+                  echo "Found refs to clean:"
+                  echo "$all_refs"
+                  
+                  echo "$all_refs" | while read -r ref; do
+                    if [ -n "$ref" ]; then
+                      delete_caches_for_ref "$ref"
+                    fi
+                  done
+                fi
+                ;;
+            esac
+            
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            ref="refs/pull/${{ github.event.pull_request.number }}/merge"
+            delete_caches_for_ref "$ref"
+            
+          else
+            # workflow_run event
+            ref="refs/heads/${{ github.event.workflow_run.head_branch }}"
+            delete_caches_for_ref "$ref"
+          fi
           
           echo "Cache cleanup completed"
+          echo "Total estimated caches deleted: $total_deleted"
+          
+          if [ $total_deleted -gt 0 ]; then
+            echo "::notice::Cache cleanup completed successfully"
+          fi
