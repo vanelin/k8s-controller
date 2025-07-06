@@ -1,11 +1,7 @@
-name: Prune caches for non-main branches & PRs
+name: Smart cache cleanup - delete only after merge
 on:
-  workflow_run:
-    workflows: ["CI"]
-    branches-ignore: [main]
-    types: [completed]
   pull_request:
-    types: [closed]
+    types: [closed]  # Only when PR is closed
   workflow_dispatch:
     inputs:
       cleanup_mode:
@@ -29,9 +25,9 @@ on:
 
 jobs:
   prune:
+    # Run only if PR was merged or manual dispatch
     if: |
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
-      (github.event_name == 'pull_request') ||
+      (github.event_name == 'pull_request' && github.event.pull_request.merged == true) ||
       (github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     permissions:
@@ -44,7 +40,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Cleanup based on mode
+      - name: Smart cleanup based on event
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
@@ -58,7 +54,8 @@ jobs:
           # Function to delete caches for a ref
           delete_caches_for_ref() {
             local ref="$1"
-            echo "::group::Cleaning caches for $ref"
+            local ref_name="$2"
+            echo "::group::Cleaning caches for $ref_name ($ref)"
             
             cache_ids=$(gh cache list --ref "$ref" --json id --jq '.[].id')
             
@@ -77,21 +74,43 @@ jobs:
               
               actual_deleted=$(echo "$cache_ids" | wc -l)
               total_deleted=$((total_deleted + actual_deleted))
-              echo "Deleted $actual_deleted caches for $ref"
+              echo "Deleted $actual_deleted caches for $ref_name"
             fi
             echo "::endgroup::"
           }
           
-          # Handle different cleanup modes
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          # Handle different events and modes
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            # PR was merged - clean both PR and source branch caches
+            pr_number="${{ github.event.pull_request.number }}"
+            source_branch="${{ github.event.pull_request.head.ref }}"
+            target_branch="${{ github.event.pull_request.base.ref }}"
+            
+            echo "PR #$pr_number was merged from '$source_branch' to '$target_branch'"
+            
+            # Delete PR caches
+            pr_ref="refs/pull/$pr_number/merge"
+            delete_caches_for_ref "$pr_ref" "PR #$pr_number"
+            
+            # Delete source branch caches (only if merged to main)
+            if [[ "$target_branch" == "main" ]]; then
+              branch_ref="refs/heads/$source_branch"
+              delete_caches_for_ref "$branch_ref" "branch '$source_branch'"
+              
+              echo "::notice::Cleaned caches for merged PR #$pr_number and source branch '$source_branch'"
+            else
+              echo "::notice::Cleaned caches for PR #$pr_number (merged to '$target_branch', not main)"
+            fi
+            
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             case "$CLEANUP_MODE" in
               "single")
                 if [[ -n "$PR_INPUT" ]]; then
                   ref="refs/pull/$PR_INPUT/merge"
-                  delete_caches_for_ref "$ref"
+                  delete_caches_for_ref "$ref" "PR #$PR_INPUT"
                 elif [[ -n "$BRANCH_INPUT" ]]; then
                   ref="refs/heads/$BRANCH_INPUT"
-                  delete_caches_for_ref "$ref"
+                  delete_caches_for_ref "$ref" "branch '$BRANCH_INPUT'"
                 else
                   echo "Please specify a branch or PR number for single cleanup"
                   exit 1
@@ -112,7 +131,7 @@ jobs:
                   
                   for branch in $all_branches; do
                     ref="refs/heads/$branch"
-                    delete_caches_for_ref "$ref"
+                    delete_caches_for_ref "$ref" "branch '$branch'"
                   done
                 fi
                 ;;
@@ -131,7 +150,8 @@ jobs:
                   
                   echo "$pr_refs" | while read -r ref; do
                     if [ -n "$ref" ]; then
-                      delete_caches_for_ref "$ref"
+                      pr_num=$(echo "$ref" | sed 's|refs/pull/\([0-9]*\)/.*|\1|')
+                      delete_caches_for_ref "$ref" "PR #$pr_num"
                     fi
                   done
                 fi
@@ -151,26 +171,21 @@ jobs:
                   
                   echo "$all_refs" | while read -r ref; do
                     if [ -n "$ref" ]; then
-                      delete_caches_for_ref "$ref"
+                      if [[ "$ref" == refs/pull/* ]]; then
+                        pr_num=$(echo "$ref" | sed 's|refs/pull/\([0-9]*\)/.*|\1|')
+                        delete_caches_for_ref "$ref" "PR #$pr_num"
+                      elif [[ "$ref" == refs/heads/* ]]; then
+                        branch=$(echo "$ref" | sed 's|refs/heads/||')
+                        delete_caches_for_ref "$ref" "branch '$branch'"
+                      else
+                        delete_caches_for_ref "$ref" "ref '$ref'"
+                      fi
                     fi
                   done
                 fi
                 ;;
             esac
-            
-          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            ref="refs/pull/${{ github.event.pull_request.number }}/merge"
-            delete_caches_for_ref "$ref"
-            
-          else
-            # workflow_run event
-            ref="refs/heads/${{ github.event.workflow_run.head_branch }}"
-            delete_caches_for_ref "$ref"
           fi
           
-          echo "Cache cleanup completed"
+          echo "Smart cache cleanup completed"
           echo "Total estimated caches deleted: $total_deleted"
-          
-          if [ $total_deleted -gt 0 ]; then
-            echo "::notice::Cache cleanup completed successfully"
-          fi
