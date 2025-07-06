@@ -6,7 +6,16 @@ on:
     types: [completed]
   pull_request:
     types: [closed]
-  workflow_dispatch:  # <-- Allows manual run from GitHub Actions UI
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch name (for branch cache cleanup)'
+        required: false
+        default: ''
+      pr:
+        description: 'PR number (for PR cache cleanup)'
+        required: false
+        default: ''
 
 jobs:
   prune:
@@ -21,7 +30,16 @@ jobs:
       - name: Find ref to purge
         id: ref
         run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          # For manual run, use input if provided
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            if [[ -n "${{ github.event.inputs.pr }}" ]]; then
+              echo "ref=refs/pull/${{ github.event.inputs.pr }}/merge" >> $GITHUB_OUTPUT
+            elif [[ -n "${{ github.event.inputs.branch }}" ]]; then
+              echo "ref=refs/heads/${{ github.event.inputs.branch }}" >> $GITHUB_OUTPUT
+            else
+              echo "ref=" >> $GITHUB_OUTPUT
+            fi
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
             echo "ref=refs/pull/${{ github.event.pull_request.number }}/merge" >> $GITHUB_OUTPUT
           else
             echo "ref=refs/heads/${{ github.event.workflow_run.head_branch }}" >> $GITHUB_OUTPUT
@@ -33,6 +51,10 @@ jobs:
           GH_REPO: ${{ github.repository }}
           REF: ${{ steps.ref.outputs.ref }}
         run: |
+          if [ -z "$REF" ]; then
+            echo "No ref provided. Please specify a branch or PR number for manual runs."
+            exit 1
+          fi
           echo "Purging caches for $REF"
           set +e  # Don't fail on individual cache deletion errors
           

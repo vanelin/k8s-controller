@@ -29,11 +29,10 @@ jobs:
           for prefix in $PREFIXES; do
             echo "::group::Processing prefix: $prefix"
             
-            # Get caches sorted by lastAccessedAt, keep newest (last), delete rest
-            cache_ids=$(gh cache list --ref "$REF" --limit 50 \
+            # Use --key to filter by prefix, sort by lastAccessedAt, keep newest (last), delete the rest
+            cache_ids=$(gh cache list --ref "$REF" --limit 50 --key "$prefix" \
               --json id,key,lastAccessedAt \
-              --jq --arg prefix "$prefix" \
-              '[.[] | select(.key | startswith($prefix))] | sort_by(.lastAccessedAt) | .[0:-1] | .[].id')
+              --jq 'sort_by(.lastAccessedAt) | .[0:-1] | .[].id')
             
             if [ -z "$cache_ids" ]; then
               echo "No old caches found with prefix: $prefix"
