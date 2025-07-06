@@ -28,14 +28,16 @@ A Go-based Kubernetes controller with structured logging, environment configurat
 - **FastHTTP Server** - High-performance HTTP server with configurable port and logging
 - **REST API** - JSON API endpoints for deployment information with multi-namespace support
 - **Deployment Informer** - Real-time Kubernetes Deployment event monitoring using client-go informers
+- **Controller-runtime Deployment Controller** - Production-grade Kubernetes controller using controller-runtime framework with reconciliation loops
 - **Kubernetes Integration** - List deployments and manage Kubernetes resources with namespace support
 - **Smart Configuration** - Load from `.env` files, environment variables, or CLI flags with proper priority
-- **Structured Logging** - Zero-config logging with zerolog
+- **Structured Logging** - Zero-config logging with zerolog and controller-runtime integration
 - **Development Tools** - Comprehensive Makefile with development workflows
 - **Multi-arch Docker** - Official images for `linux/amd64` and `linux/arm64`
 - **Helm Chart** - Easy deployment to Kubernetes
 - **Comprehensive Testing** - Unit tests with coverage reporting and envtest integration
 - **Graceful Shutdown** - Proper signal handling and resource cleanup
+- **Metrics Server** - Prometheus metrics endpoint for controller monitoring
 
 ## Prerequisites
 
@@ -51,26 +53,29 @@ A Go-based Kubernetes controller with structured logging, environment configurat
 k8s-controller/
 ├── cmd/
 │   ├── root.go                    # Main CLI application
-│   ├── server.go                  # FastHTTP server command with informer
-│   ├── server_test.go             # Tests for server command
+│   ├── server.go                  # FastHTTP server command with informer and controller
+│   ├── server_test.go
 │   ├── list.go                    # Kubernetes deployments list command
-│   └── list_test.go               # Tests for list command
+│   └── list_test.go
 ├── pkg/
 │   ├── common/
 │   │   ├── config/                # Configuration management
 │   │   │   ├── config.go
 │   │   │   └── config_test.go
 │   │   ├── utils/                 # Utility functions
-│   │   │   └── k8s.go             # Kubernetes utilities
+│   │   │   └── k8s.go
 │   │   └── envs/                  # Environment files
 │   │       └── .env
 │   ├── handlers/                  # HTTP handlers for API endpoints
-│   │   ├── handlers.go            # Main handler implementation
-│   │   ├── handlers_test.go       # Unit tests
-│   │   └── handlers_env_test.go   # Integration tests with envtest
+│   │   ├── handlers.go
+│   │   ├── handlers_test.go
+│   │   └── handlers_env_test.go
 │   ├── informer/                  # Deployment informer implementation
 │   │   ├── informer.go
 │   │   └── informer_test.go
+│   ├── ctrl/                      # Controller-runtime implementations
+│   │   ├── deployment_controller.go
+│   │   └── deployment_controller_test.go
 │   └── testutil/                  # Testing utilities and envtest setup
 │       ├── envtest.go
 │       └── envtest_test.go
@@ -87,6 +92,7 @@ k8s-controller/
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `PORT` | Server port | `8080` |
+| `METRIC_PORT` | Controller-runtime metrics server port | `8081` |
 | `KUBECONFIG` | Path to Kubernetes configuration file | `~/.kube/config` |
 | `IN_CLUSTER` | Use in-cluster Kubernetes config | `false` |
 | `NAMESPACE` | Kubernetes namespace(s) for operations (comma-separated, e.g., "kube-system,monitoring") | `default` |
@@ -96,10 +102,10 @@ k8s-controller/
 
 All commands follow the same configuration priority:
 
-1. **CLI flags** (`--port`, `--log-level`, `--kubeconfig`, `--in-cluster`, `--namespace`) - highest priority
-2. **Environment variables** (`PORT`, `LOGGING_LEVEL`, `KUBECONFIG`, `IN_CLUSTER`, `NAMESPACE`)
+1. **CLI flags** (`--port`, `--metric-port`, `--log-level`, `--kubeconfig`, `--in-cluster`, `--namespace`) - highest priority
+2. **Environment variables** (`PORT`, `METRIC_PORT`, `LOGGING_LEVEL`, `KUBECONFIG`, `IN_CLUSTER`, `NAMESPACE`)
 3. **`.env` file** values (`pkg/common/envs/.env`)
-4. **Default values** (PORT=8080, LOGGING_LEVEL=info, KUBECONFIG=~/.kube/config, IN_CLUSTER=false, NAMESPACE=default)
+4. **Default values** (PORT=8080, METRIC_PORT=8081, LOGGING_LEVEL=info, KUBECONFIG=~/.kube/config, IN_CLUSTER=false, NAMESPACE=default)
 
 ## Quick Start
 
@@ -120,6 +126,9 @@ make list-namespace
 
 # Start server with multiple namespaces via environment variable
 export NAMESPACE=kube-system,monitoring && make server
+
+# Test controller-runtime Deployment controller
+make test-ctrl
 
 # Development workflow
 make dev-server
@@ -161,7 +170,7 @@ The main feature of this application is a high-performance FastHTTP server that 
 go run main.go server --kubeconfig ~/.kube/config
 
 # With custom configuration
-go run main.go server --port 9090 --log-level debug --kubeconfig ~/.kube/config --namespace kube-system
+go run main.go server --port 9090 --metric-port 9091 --log-level debug --kubeconfig ~/.kube/config --namespace kube-system
 
 # Using in-cluster configuration
 go run main.go server --in-cluster --namespace kube-system
@@ -187,7 +196,7 @@ export NAMESPACE=kube-system,test
 go run main.go list
 
 # Server with environment variables
-export PORT=9090 && export LOGGING_LEVEL=debug && go run main.go server
+export PORT=9090 && export METRIC_PORT=9091 && export LOGGING_LEVEL=debug && go run main.go server
 
 # List with environment variables
 export KUBECONFIG=~/.kube/config-prod && export NAMESPACE=monitoring && go run main.go list
@@ -196,17 +205,19 @@ export KUBECONFIG=~/.kube/config-prod && export NAMESPACE=monitoring && go run m
 #### What it does
 
 - Starts a FastHTTP server on the specified port (default: 8080)
+- Starts a controller-runtime manager with Deployment controller on the specified metrics port (default: 8081)
 - Provides JSON API endpoints for deployment information:
   - `/` - Root endpoint with version information
   - `/namespaces` - List all watched namespaces
   - `/deployments` - List deployments from all watched namespaces
   - `/deployments/{namespace}` - List deployments in specific namespace
+- Provides Prometheus metrics endpoint at `:8081/metrics` for controller monitoring
 
 #### API Examples
 
 ```bash
 # Start server with multiple namespaces
-./k8s-controller server --kubeconfig ~/.kube/config --port 8080 -n kube-system,monitoring
+./k8s-controller server --kubeconfig ~/.kube/config --port 8080 --metric-port 8081 -n kube-system,monitoring
 
 # Get all watched namespaces
 curl -s http://localhost:8080/namespaces
@@ -243,10 +254,40 @@ curl -s http://localhost:8080/
 ```
 
 **Note:** The `/deployments` endpoint returns deployments from all namespaces being watched by the informer, not just the default namespace. This provides a comprehensive view of all deployments across monitored namespaces.
-- Deployment Informer: Watches for Deployment events (add, update, delete) in the specified namespace(s)
-- Uses structured logging with configurable levels
+- **Deployment Informer**: Watches for Deployment events (add, update, delete) in the specified namespace(s)
+- **Controller-runtime Deployment Controller**: Provides production-grade reconciliation loops for Deployments with proper error handling and retry logic
+- Uses structured logging with configurable levels (zerolog integration for both FastHTTP server and controller-runtime)
 - Supports hot-reload configuration via environment variables
 - Implements graceful shutdown with proper signal handling
+- Provides Prometheus metrics for monitoring controller performance
+
+### Controller-runtime Deployment Controller
+
+The project includes a production-grade Kubernetes controller built using the [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) framework. This controller provides:
+
+- **Reconciliation Loops**: Proper handling of Deployment events with retry logic and exponential backoff
+- **Namespace Filtering**: Controller only processes Deployments in specified namespaces
+- **Structured Logging**: Integration with zerolog for consistent logging across the application
+- **Metrics**: Prometheus metrics endpoint for monitoring controller performance
+- **Leader Election**: Support for high availability deployments (future enhancement)
+
+#### Controller Features
+
+- **Event Logging**: Logs each reconciliation event for Deployments
+- **Error Handling**: Proper error handling with retry mechanisms
+- **Resource Validation**: Validates Deployment specifications
+- **Metrics Collection**: Tracks reconciliation duration, success/failure rates
+- **Graceful Shutdown**: Proper cleanup when the controller stops
+
+#### Testing the Controller
+
+```bash
+# Test the controller with envtest
+make test-ctrl
+
+# Run controller tests with verbose output
+make test-ctrl TEST_ARGS="-v"
+```
 
 ### Kubernetes List Command
 
@@ -348,6 +389,15 @@ This project uses [envtest](https://book.kubebuilder.io/reference/envtest.html) 
    - Write a kubeconfig to `/tmp/envtest.kubeconfig`
    - Sleep for 5 minutes at the end of the test so you can inspect the cluster
 
+2. **Run the controller test:**
+   ```sh
+   make test-ctrl
+   ```
+   This will:
+   - Start envtest and create sample Deployments
+   - Test the controller-runtime Deployment controller
+   - Verify reconciliation logic and error handling
+
 2. **In another terminal, use kubectl:**
    ```sh
    kubectl --kubeconfig=/tmp/envtest.kubeconfig get all -A
@@ -376,7 +426,7 @@ make help
 **Variable Override:** You can override any Makefile variable:
 ```bash
 # Override default values
-make server SERVER_PORT=9090 LOGGING_LEVEL=debug NAMESPACE=kube-system,monitoring
+make server SERVER_PORT=9090 METRIC_PORT=9091 LOGGING_LEVEL=debug NAMESPACE=kube-system,monitoring
 
 # Cross-compilation
 make build TARGETOS=linux TARGETARCH=amd64
@@ -388,6 +438,7 @@ make docker-build-multi REGISTRY=my-registry.com REPOSITORY=my-org
 **Environment Variables:** The Makefile respects environment variables with the same names:
 ```bash
 export SERVER_PORT=9090
+export METRIC_PORT=9091
 export LOGGING_LEVEL=debug
 export KUBECONFIG=~/.kube/config-prod
 make server
@@ -413,7 +464,9 @@ docker run --rm \
   -e IN_CLUSTER=false \
   -e LOGGING_LEVEL=debug \
   -e NAMESPACE=kube-system,monitoring,default \
+  -e METRIC_PORT=8081 \
   -p 8080:8080 \
+  -p 8081:8081 \
   ghcr.io/vanelin/k8s-controller:latest server
 ```
 
@@ -438,6 +491,7 @@ helm upgrade --install k8s-controller ./k8s-controller-helm-chart.tgz \
   --namespace k8s-controller \
   --create-namespace \
   --set server.port=9090 \
+  --set server.metricPort=9091 \
   --set server.logLevel=info \
   --set server.namespace=monitoring \
   --set server.inCluster=true
@@ -475,7 +529,7 @@ sudo usermod -aG docker $USER
 sudo netstat -tulpn | grep :8080
 
 # Use a different port
-./k8s-controller server --port 8081
+./k8s-controller server --port 8081 --metric-port 8082
 ```
 
 #### Kubernetes Connection Issues

@@ -15,6 +15,7 @@ type Config struct {
 	LoggingLevel string `mapstructure:"LOGGING_LEVEL"`
 	Namespace    string `mapstructure:"NAMESPACE"`
 	InCluster    bool   `mapstructure:"IN_CLUSTER"`
+	MetricPort   string `mapstructure:"METRIC_PORT"`
 }
 
 // LoadConfig reads configuration from file or environment variables
@@ -38,6 +39,9 @@ func LoadConfig(path string) (config Config, err error) {
 	}
 	if err := viper.BindEnv("IN_CLUSTER"); err != nil {
 		return config, fmt.Errorf("failed to bind IN_CLUSTER env var: %w", err)
+	}
+	if err := viper.BindEnv("METRIC_PORT"); err != nil {
+		return config, fmt.Errorf("failed to bind METRIC_PORT env var: %w", err)
 	}
 
 	// Enable automatic environment variable reading
@@ -76,6 +80,9 @@ func (c *Config) setDefaults() {
 	if c.Namespace == "" {
 		c.Namespace = "default"
 	}
+	if c.MetricPort == "" {
+		c.MetricPort = "8081"
+	}
 	// InCluster defaults to false, no need to set it
 }
 
@@ -102,6 +109,7 @@ func GetConfigPath() string {
 func (c *Config) PrintConfig() {
 	fmt.Printf("Configuration:\n")
 	fmt.Printf("  PORT: %s\n", c.Port)
+	fmt.Printf("  METRIC_PORT: %s\n", c.MetricPort)
 	fmt.Printf("  LOGGING_LEVEL: %s\n", c.LoggingLevel)
 	if c.KUBECONFIG != "" {
 		fmt.Printf("  KUBECONFIG: %s\n", c.KUBECONFIG)

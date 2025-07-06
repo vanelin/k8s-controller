@@ -27,6 +27,7 @@ func TestConfig_SetDefaults(t *testing.T) {
 				LoggingLevel: "info",
 				Namespace:    "default",
 				InCluster:    false,
+				MetricPort:   "8081",
 			},
 		},
 		{
@@ -40,6 +41,7 @@ func TestConfig_SetDefaults(t *testing.T) {
 				LoggingLevel: "info",
 				Namespace:    "default",
 				InCluster:    false,
+				MetricPort:   "8081",
 			},
 		},
 		{
@@ -50,6 +52,7 @@ func TestConfig_SetDefaults(t *testing.T) {
 				LoggingLevel: "debug",
 				Namespace:    "custom-namespace",
 				InCluster:    true,
+				MetricPort:   "9091",
 			},
 			expected: Config{
 				Port:         "9090",
@@ -57,6 +60,7 @@ func TestConfig_SetDefaults(t *testing.T) {
 				LoggingLevel: "debug",
 				Namespace:    "custom-namespace",
 				InCluster:    true,
+				MetricPort:   "9091",
 			},
 		},
 	}
@@ -108,6 +112,7 @@ func TestLoadConfig_WithEnvFile(t *testing.T) {
 	originalKubeconfig := os.Getenv("KUBECONFIG")
 	originalNamespace := os.Getenv("NAMESPACE")
 	originalInCluster := os.Getenv("IN_CLUSTER")
+	originalMetricPort := os.Getenv("METRIC_PORT")
 
 	if err := os.Unsetenv("PORT"); err != nil {
 		t.Fatalf("Failed to unset PORT env var: %v", err)
@@ -123,6 +128,9 @@ func TestLoadConfig_WithEnvFile(t *testing.T) {
 	}
 	if err := os.Unsetenv("IN_CLUSTER"); err != nil {
 		t.Fatalf("Failed to unset IN_CLUSTER env var: %v", err)
+	}
+	if err := os.Unsetenv("METRIC_PORT"); err != nil {
+		t.Fatalf("Failed to unset METRIC_PORT env var: %v", err)
 	}
 
 	// Restore original values after test
@@ -152,6 +160,11 @@ func TestLoadConfig_WithEnvFile(t *testing.T) {
 				t.Errorf("Failed to restore IN_CLUSTER env var: %v", err)
 			}
 		}
+		if originalMetricPort != "" {
+			if err := os.Setenv("METRIC_PORT", originalMetricPort); err != nil {
+				t.Errorf("Failed to restore METRIC_PORT env var: %v", err)
+			}
+		}
 	}()
 
 	// Create a temporary directory for test
@@ -162,7 +175,8 @@ func TestLoadConfig_WithEnvFile(t *testing.T) {
 LOGGING_LEVEL=debug
 KUBECONFIG=/test/kube/config
 NAMESPACE=test-namespace
-IN_CLUSTER=true`
+IN_CLUSTER=true
+METRIC_PORT=9091`
 
 	envFile := filepath.Join(tempDir, ".env")
 	if err := os.WriteFile(envFile, []byte(envContent), 0644); err != nil {
@@ -182,6 +196,7 @@ IN_CLUSTER=true`
 		LoggingLevel: "debug",             // From .env file
 		Namespace:    "test-namespace",    // From .env file
 		InCluster:    true,                // From .env file
+		MetricPort:   "9091",              // From .env file
 	}
 
 	if config != expected {
@@ -206,6 +221,9 @@ func TestLoadConfig_WithEnvironmentVariables(t *testing.T) {
 	if err := os.Setenv("IN_CLUSTER", "true"); err != nil {
 		t.Fatalf("Failed to set IN_CLUSTER env var: %v", err)
 	}
+	if err := os.Setenv("METRIC_PORT", "7071"); err != nil {
+		t.Fatalf("Failed to set METRIC_PORT env var: %v", err)
+	}
 
 	// Clean up after test
 	defer func() {
@@ -224,6 +242,9 @@ func TestLoadConfig_WithEnvironmentVariables(t *testing.T) {
 		if err := os.Unsetenv("IN_CLUSTER"); err != nil {
 			t.Errorf("Failed to unset IN_CLUSTER env var: %v", err)
 		}
+		if err := os.Unsetenv("METRIC_PORT"); err != nil {
+			t.Errorf("Failed to unset METRIC_PORT env var: %v", err)
+		}
 	}()
 
 	// Load config (should use environment variables)
@@ -239,6 +260,7 @@ func TestLoadConfig_WithEnvironmentVariables(t *testing.T) {
 		LoggingLevel: "warn",
 		Namespace:    "env-namespace",
 		InCluster:    true,
+		MetricPort:   "7071",
 	}
 
 	if config != expected {
@@ -256,6 +278,7 @@ func TestLoadConfig_WithDefaults(t *testing.T) {
 	originalKubeconfig := os.Getenv("KUBECONFIG")
 	originalNamespace := os.Getenv("NAMESPACE")
 	originalInCluster := os.Getenv("IN_CLUSTER")
+	originalMetricPort := os.Getenv("METRIC_PORT")
 
 	if err := os.Unsetenv("PORT"); err != nil {
 		t.Fatalf("Failed to unset PORT env var: %v", err)
@@ -271,6 +294,9 @@ func TestLoadConfig_WithDefaults(t *testing.T) {
 	}
 	if err := os.Unsetenv("IN_CLUSTER"); err != nil {
 		t.Fatalf("Failed to unset IN_CLUSTER env var: %v", err)
+	}
+	if err := os.Unsetenv("METRIC_PORT"); err != nil {
+		t.Fatalf("Failed to unset METRIC_PORT env var: %v", err)
 	}
 
 	// Restore original values after test
@@ -298,6 +324,11 @@ func TestLoadConfig_WithDefaults(t *testing.T) {
 		if originalInCluster != "" {
 			if err := os.Setenv("IN_CLUSTER", originalInCluster); err != nil {
 				t.Errorf("Failed to restore IN_CLUSTER env var: %v", err)
+			}
+		}
+		if originalMetricPort != "" {
+			if err := os.Setenv("METRIC_PORT", originalMetricPort); err != nil {
+				t.Errorf("Failed to restore METRIC_PORT env var: %v", err)
 			}
 		}
 	}()
@@ -323,6 +354,9 @@ func TestLoadConfig_WithDefaults(t *testing.T) {
 	}
 	if config.InCluster != false {
 		t.Errorf("Expected default IN_CLUSTER=false, got %t", config.InCluster)
+	}
+	if config.MetricPort != "8081" {
+		t.Errorf("Expected default METRIC_PORT=8081, got %s", config.MetricPort)
 	}
 }
 
@@ -358,6 +392,9 @@ func TestLoadConfig_EmptyEnvFile(t *testing.T) {
 	if config.InCluster != false {
 		t.Errorf("Expected default IN_CLUSTER=false, got %t", config.InCluster)
 	}
+	if config.MetricPort != "8081" {
+		t.Errorf("Expected default METRIC_PORT=8081, got %s", config.MetricPort)
+	}
 }
 
 // TestLoadConfig_EnvOverridesEnvFile explicitly tests that environment variables override .env file values
@@ -373,7 +410,8 @@ func TestLoadConfig_EnvOverridesEnvFile(t *testing.T) {
 LOGGING_LEVEL=debug
 KUBECONFIG=/test/kube/config
 NAMESPACE=test-namespace
-IN_CLUSTER=false`
+IN_CLUSTER=false
+METRIC_PORT=9091`
 
 	envFile := filepath.Join(tempDir, ".env")
 	if err := os.WriteFile(envFile, []byte(envContent), 0644); err != nil {
@@ -396,6 +434,9 @@ IN_CLUSTER=false`
 	if err := os.Setenv("IN_CLUSTER", "true"); err != nil {
 		t.Fatalf("Failed to set IN_CLUSTER env var: %v", err)
 	}
+	if err := os.Setenv("METRIC_PORT", "8031"); err != nil {
+		t.Fatalf("Failed to set METRIC_PORT env var: %v", err)
+	}
 
 	// Clean up environment variables after test
 	defer func() {
@@ -414,6 +455,9 @@ IN_CLUSTER=false`
 		if err := os.Unsetenv("IN_CLUSTER"); err != nil {
 			t.Errorf("Failed to unset IN_CLUSTER env var: %v", err)
 		}
+		if err := os.Unsetenv("METRIC_PORT"); err != nil {
+			t.Errorf("Failed to unset METRIC_PORT env var: %v", err)
+		}
 	}()
 
 	// Load config from the test directory
@@ -429,6 +473,7 @@ IN_CLUSTER=false`
 		LoggingLevel: "warn",             // From LOGGING_LEVEL env var
 		Namespace:    "env-namespace",    // From NAMESPACE env var
 		InCluster:    true,               // From IN_CLUSTER env var
+		MetricPort:   "8031",             // From METRIC_PORT env var
 	}
 
 	if config != expected {
@@ -512,7 +557,8 @@ func TestLoadConfig_WithEnvFile_EnvTestIsolated(t *testing.T) {
 LOGGING_LEVEL=debug
 KUBECONFIG=/tmp/envtest.kubeconfig
 NAMESPACE=default
-IN_CLUSTER=false`
+IN_CLUSTER=false
+METRIC_PORT=9091`
 
 	envFile := filepath.Join(tempDir, ".env")
 	if err := os.WriteFile(envFile, []byte(envContent), 0644); err != nil {
@@ -532,6 +578,7 @@ IN_CLUSTER=false`
 		LoggingLevel: "debug",                   // From .env file
 		Namespace:    "default",                 // From .env file
 		InCluster:    false,                     // From .env file
+		MetricPort:   "9091",                    // From .env file
 	}
 
 	if config != expected {
@@ -662,6 +709,7 @@ IN_CLUSTER=true`
 			LoggingLevel: "debug",             // From .env file
 			Namespace:    "test-namespace",    // From .env file
 			InCluster:    true,                // From .env file
+			MetricPort:   "8081",              // Default value
 		}
 
 		if config != expected {
@@ -732,6 +780,7 @@ IN_CLUSTER=true`
 			LoggingLevel: "warn",             // From environment variable
 			Namespace:    "env-namespace",    // From environment variable
 			InCluster:    false,              // From environment variable
+			MetricPort:   "8081",             // Default value
 		}
 
 		if config != expected {
@@ -784,6 +833,7 @@ IN_CLUSTER=true`
 			LoggingLevel: "debug",             // From .env file
 			Namespace:    "env-namespace",     // From environment variable
 			InCluster:    true,                // From .env file
+			MetricPort:   "8081",              // Default value
 		}
 
 		if config != expected {
@@ -809,6 +859,7 @@ IN_CLUSTER=true`
 			LoggingLevel: "info",           // Default value
 			Namespace:    "default",        // Default value
 			InCluster:    false,            // Default value
+			MetricPort:   "8081",           // Default value
 		}
 
 		if config != expected {
@@ -837,6 +888,7 @@ IN_CLUSTER=true`
 			LoggingLevel: "info",           // Default value
 			Namespace:    "default",        // Default value
 			InCluster:    false,            // Default value
+			MetricPort:   "8081",           // Default value
 		}
 
 		if config != expected {
@@ -1038,6 +1090,7 @@ IN_CLUSTER=true`
 			LoggingLevel: "error",            // From CLI flag
 			Namespace:    "cli-namespace",    // From CLI flag
 			InCluster:    true,               // From CLI flag
+			MetricPort:   "8081",             // Default value
 		}
 
 		if config != expected {
@@ -1094,6 +1147,7 @@ IN_CLUSTER=true`
 			LoggingLevel: "error",             // From CLI flag
 			Namespace:    "env-namespace",     // From environment variable
 			InCluster:    true,                // From .env file
+			MetricPort:   "8081",              // Default value
 		}
 
 		if config != expected {
@@ -1150,6 +1204,7 @@ IN_CLUSTER=false`
 			LoggingLevel: "info",                    // From CLI flag
 			Namespace:    "default",                 // From CLI flag
 			InCluster:    false,                     // From .env file
+			MetricPort:   "8081",                    // Default value
 		}
 
 		if config != expected {

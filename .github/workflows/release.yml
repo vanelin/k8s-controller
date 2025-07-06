@@ -17,6 +17,7 @@ jobs:
       id-token: write
     env:
       SERVER_PORT: 8080
+      METRIC_PORT: 8081
       LOGGING_LEVEL: info
       KUBECONFIG: ~/.kube/config
       NAMESPACE: default
@@ -43,7 +44,12 @@ jobs:
 
       - name: Build binaries
         run: |
-          make build-linux VERSION=${{ steps.version.outputs.version }} SERVER_PORT=$SERVER_PORT LOGGING_LEVEL=$LOGGING_LEVEL KUBECONFIG=$KUBECONFIG
+          make build-linux \
+            VERSION=${{ steps.version.outputs.version }} \
+            SERVER_PORT=$SERVER_PORT \
+            METRIC_PORT=$METRIC_PORT \
+            LOGGING_LEVEL=$LOGGING_LEVEL \
+            KUBECONFIG=$KUBECONFIG
           mkdir -p release-files
           tar -czvf release-files/k8s-controller-linux-amd64.tar.gz build/k8s-controller-linux-amd64
           tar -czvf release-files/k8s-controller-linux-arm64.tar.gz build/k8s-controller-linux-arm64
@@ -107,16 +113,12 @@ jobs:
             ${{ runner.os }}-go-build-cache-
 
       - name: Fix cache permissions
-        if: steps.cache.outputs.cache-hit == 'true'
+        if: steps.cache.outputs.cache-hit != 'false'
         run: |
-          if [ -d "go-build-cache" ]; then
-            echo "Fixing go-build-cache permissions..."
-            sudo find go-build-cache -type d -exec chmod 755 {} \;
-            sudo find go-build-cache -type f -exec chmod 644 {} \;
-            echo "Cache permissions fixed. Files: $(find go-build-cache -type f | wc -l), Directories: $(find go-build-cache -type d | wc -l)"
-          else
-            echo "go-build-cache directory does not exist - cache miss"
-          fi
+          echo "::group::Fixing go-build-cache permissions"
+          sudo chown -R $(id -u):$(id -g) go-build-cache
+          sudo chmod -R u+rwX,go+rX go-build-cache
+          echo "::endgroup::"
 
       - name: Inject go-build-cache
         uses: reproducible-containers/buildkit-cache-dance@v3.3.0
@@ -143,6 +145,7 @@ jobs:
           build-args: |
             VERSION=${{ steps.version.outputs.version }}
             SERVER_PORT=${{ env.SERVER_PORT }}
+            METRIC_PORT=${{ env.METRIC_PORT }}
             LOGGING_LEVEL=${{ env.LOGGING_LEVEL }}
             KUBECONFIG=${{ env.KUBECONFIG }}
             NAMESPACE=${{ env.NAMESPACE }}
