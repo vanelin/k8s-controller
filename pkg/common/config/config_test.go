@@ -353,6 +353,15 @@ func TestLoadConfig_WithDefaults(t *testing.T) {
 }
 
 func TestLoadConfig_EmptyEnvFile(t *testing.T) {
+	// Reset Viper to clear any cached values
+	viper.Reset()
+
+	// Use helper for environment isolation
+	cleanup := envSnapshot(t,
+		"PORT", "LOGGING_LEVEL", "KUBECONFIG", "NAMESPACE", "IN_CLUSTER", "METRIC_PORT", "ENABLE_LEADER_ELECTION", "LEADER_ELECTION_NAMESPACE",
+	)
+	defer cleanup()
+
 	// Create a temporary directory for test
 	tempDir := t.TempDir()
 
@@ -587,58 +596,11 @@ func TestLoadConfig_WithEnvFile_EnvTestIsolated(t *testing.T) {
 	// Reset Viper to clear any cached values
 	viper.Reset()
 
-	// Clear all relevant environment variables to ensure clean state
-	originalPort := os.Getenv("PORT")
-	originalLoggingLevel := os.Getenv("LOGGING_LEVEL")
-	originalKubeconfig := os.Getenv("KUBECONFIG")
-	originalNamespace := os.Getenv("NAMESPACE")
-	originalInCluster := os.Getenv("IN_CLUSTER")
-
-	// Unset all environment variables
-	if err := os.Unsetenv("PORT"); err != nil {
-		t.Fatalf("Failed to unset PORT env var: %v", err)
-	}
-	if err := os.Unsetenv("LOGGING_LEVEL"); err != nil {
-		t.Fatalf("Failed to unset LOGGING_LEVEL env var: %v", err)
-	}
-	if err := os.Unsetenv("KUBECONFIG"); err != nil {
-		t.Fatalf("Failed to unset KUBECONFIG env var: %v", err)
-	}
-	if err := os.Unsetenv("NAMESPACE"); err != nil {
-		t.Fatalf("Failed to unset NAMESPACE env var: %v", err)
-	}
-	if err := os.Unsetenv("IN_CLUSTER"); err != nil {
-		t.Fatalf("Failed to unset IN_CLUSTER env var: %v", err)
-	}
-
-	// Restore original values after test
-	defer func() {
-		if originalPort != "" {
-			if err := os.Setenv("PORT", originalPort); err != nil {
-				t.Errorf("Failed to restore PORT env var: %v", err)
-			}
-		}
-		if originalLoggingLevel != "" {
-			if err := os.Setenv("LOGGING_LEVEL", originalLoggingLevel); err != nil {
-				t.Errorf("Failed to restore LOGGING_LEVEL env var: %v", err)
-			}
-		}
-		if originalKubeconfig != "" {
-			if err := os.Setenv("KUBECONFIG", originalKubeconfig); err != nil {
-				t.Errorf("Failed to restore KUBECONFIG env var: %v", err)
-			}
-		}
-		if originalNamespace != "" {
-			if err := os.Setenv("NAMESPACE", originalNamespace); err != nil {
-				t.Errorf("Failed to restore NAMESPACE env var: %v", err)
-			}
-		}
-		if originalInCluster != "" {
-			if err := os.Setenv("IN_CLUSTER", originalInCluster); err != nil {
-				t.Errorf("Failed to restore IN_CLUSTER env var: %v", err)
-			}
-		}
-	}()
+	// Use helper for environment isolation
+	envCleanup := envSnapshot(t,
+		"PORT", "LOGGING_LEVEL", "KUBECONFIG", "NAMESPACE", "IN_CLUSTER", "METRIC_PORT", "ENABLE_LEADER_ELECTION", "LEADER_ELECTION_NAMESPACE",
+	)
+	defer envCleanup()
 
 	// Create a temporary directory for test
 	tempDir := t.TempDir()
