@@ -1,0 +1,65 @@
+name: Prune caches on main (keep the newest)
+on:
+  workflow_run:
+    workflows: ["CI"]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+
+jobs:
+  prune-main:
+    if: |
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+      (github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Keep latest cache per key prefix, delete the rest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          REF: refs/heads/main
+          PREFIXES: "setup-go- Linux-go-build-cache- cache-trivy- trivy-binary- index-buildkit- buildkit-blob- buildx-dl-bin- docker.io--tonistiigi--binfmt-"
+        run: |
+          set +e  # Don't fail workflow on individual cache deletion errors
+          
+          total_deleted=0
+          
+          for prefix in $PREFIXES; do
+            echo "::group::Processing prefix: $prefix"
+            
+            # Get caches sorted by lastAccessedAt, keep newest (last), delete rest
+            cache_ids=$(gh cache list --ref "$REF" --limit 50 \
+              --json id,key,lastAccessedAt \
+              --jq --arg prefix "$prefix" \
+              '[.[] | select(.key | startswith($prefix))] | sort_by(.lastAccessedAt) | .[0:-1] | .[].id')
+            
+            if [ -z "$cache_ids" ]; then
+              echo "No old caches found with prefix: $prefix"
+            else
+              echo "Found old caches to delete:"
+              prefix_deleted=0
+              
+              echo "$cache_ids" | while read -r cache_id; do
+                if [ -n "$cache_id" ]; then
+                  echo "Deleting cache: $cache_id"
+                  if gh cache delete "$cache_id"; then
+                    ((prefix_deleted++))
+                    ((total_deleted++))
+                  fi
+                fi
+              done
+              
+              echo "Deleted $prefix_deleted caches with prefix: $prefix"
+            fi
+            
+            echo "::endgroup::"
+          done
+          
+          echo "Main branch cache cleanup completed"
+          echo "Total old caches deleted: $total_deleted"
+          
+          if [ $total_deleted -gt 0 ]; then
+            echo "::notice::Deleted $total_deleted old caches from main branch"
+          fi
