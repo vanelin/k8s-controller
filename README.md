@@ -8,14 +8,14 @@
 [![Updates](https://img.shields.io/github/last-commit/vanelin/k8s-controller.svg?style=flat-square&logo=git&logoColor=white&color=blue)](https://github.com/vanelin/k8s-controller/commits/main/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
 
-A Go-based Kubernetes controller with structured logging, environment configuration using Viper, FastHTTP server, and Deployment informer capabilities.
+A Go-based Kubernetes controller with structured logging, environment configuration using Viper, FastHTTP server, Deployment informer capabilities, and controller-runtime framework with leader election support.
 
 ## 📦 Release Artifacts
 
 - **Docker Image (multi-arch):**
   ```bash
   docker pull ghcr.io/vanelin/k8s-controller:<version>
-  # Example: docker pull ghcr.io/vanelin/k8s-controller:0.1.1
+  # Example: docker pull ghcr.io/vanelin/k8s-controller:0.1.3
   ```
 - **Binary Archives:**
   - [Linux (amd64)](https://github.com/vanelin/k8s-controller/releases/latest/download/k8s-controller-linux-amd64.tar.gz)
@@ -28,16 +28,18 @@ A Go-based Kubernetes controller with structured logging, environment configurat
 - **FastHTTP Server** - High-performance HTTP server with configurable port and logging
 - **REST API** - JSON API endpoints for deployment information with multi-namespace support
 - **Deployment Informer** - Real-time Kubernetes Deployment event monitoring using client-go informers
-- **Controller-runtime Deployment Controller** - Production-grade Kubernetes controller using controller-runtime framework with reconciliation loops
+- **Controller-runtime Deployment Controller** - Kubernetes controller using controller-runtime framework with reconciliation loops
+- **Leader Election** - High availability support using Lease resources for active-passive deployments
+- **Metrics Server** - Prometheus metrics endpoint for controller monitoring and observability
+- **Graceful Shutdown** - Proper signal handling and resource cleanup for both HTTP server and controller manager
+- **Health Checks** - Health and readiness endpoints that consider leader election status
 - **Kubernetes Integration** - List deployments and manage Kubernetes resources with namespace support
 - **Smart Configuration** - Load from `.env` files, environment variables, or CLI flags with proper priority
 - **Structured Logging** - Zero-config logging with zerolog and controller-runtime integration
 - **Development Tools** - Comprehensive Makefile with development workflows
 - **Multi-arch Docker** - Official images for `linux/amd64` and `linux/arm64`
-- **Helm Chart** - Easy deployment to Kubernetes
+- **Helm Chart** - Easy deployment to Kubernetes with configurable leader election
 - **Comprehensive Testing** - Unit tests with coverage reporting and envtest integration
-- **Graceful Shutdown** - Proper signal handling and resource cleanup
-- **Metrics Server** - Prometheus metrics endpoint for controller monitoring
 
 ## Prerequisites
 
@@ -89,23 +91,25 @@ k8s-controller/
 
 ### Configuration Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `PORT` | Server port | `8080` |
-| `METRIC_PORT` | Controller-runtime metrics server port | `8081` |
-| `KUBECONFIG` | Path to Kubernetes configuration file | `~/.kube/config` |
-| `IN_CLUSTER` | Use in-cluster Kubernetes config | `false` |
-| `NAMESPACE` | Kubernetes namespace(s) for operations (comma-separated, e.g., "kube-system,monitoring") | `default` |
-| `LOGGING_LEVEL` | Logging level (trace, debug, info, warn, error) | `info` |
+| Variable | Description | Default | CLI Flag |
+|----------|-------------|---------|----------|
+| `PORT` | Server port | `8080` | `--port` |
+| `METRIC_PORT` | Controller-runtime metrics server port | `8081` | `--metric-port` |
+| `KUBECONFIG` | Path to Kubernetes configuration file | `~/.kube/config` | `--kubeconfig` |
+| `IN_CLUSTER` | Use in-cluster Kubernetes config | `false` | `--in-cluster` |
+| `NAMESPACE` | Kubernetes namespace(s) for operations (comma-separated, e.g., "kube-system,monitoring") | `default` | `--namespace` |
+| `LOGGING_LEVEL` | Logging level (trace, debug, info, warn, error) | `info` | `--log-level` |
+| `ENABLE_LEADER_ELECTION` | Enable leader election for high availability | `true` | `--enable-leader-election` |
+| `LEADER_ELECTION_NAMESPACE` | Namespace for leader election Lease resource | `default` | `--leader-election-namespace` |
 
 ### Configuration Priority
 
 All commands follow the same configuration priority:
 
-1. **CLI flags** (`--port`, `--metric-port`, `--log-level`, `--kubeconfig`, `--in-cluster`, `--namespace`) - highest priority
-2. **Environment variables** (`PORT`, `METRIC_PORT`, `LOGGING_LEVEL`, `KUBECONFIG`, `IN_CLUSTER`, `NAMESPACE`)
+1. **CLI flags** (`--port`, `--metric-port`, `--log-level`, `--kubeconfig`, `--in-cluster`, `--namespace`, `--enable-leader-election`, `--leader-election-namespace`) - highest priority
+2. **Environment variables** (`PORT`, `METRIC_PORT`, `LOGGING_LEVEL`, `KUBECONFIG`, `IN_CLUSTER`, `NAMESPACE`, `ENABLE_LEADER_ELECTION`, `LEADER_ELECTION_NAMESPACE`)
 3. **`.env` file** values (`pkg/common/envs/.env`)
-4. **Default values** (PORT=8080, METRIC_PORT=8081, LOGGING_LEVEL=info, KUBECONFIG=~/.kube/config, IN_CLUSTER=false, NAMESPACE=default)
+4. **Default values** (PORT=8080, METRIC_PORT=8081, LOGGING_LEVEL=info, KUBECONFIG=~/.kube/config, IN_CLUSTER=false, NAMESPACE=default, ENABLE_LEADER_ELECTION=true, LEADER_ELECTION_NAMESPACE=default)
 
 ## Quick Start
 
@@ -115,7 +119,7 @@ All commands follow the same configuration priority:
 # Show all available commands
 make help
 
-# Start FastHTTP server with Deployment informer
+# Start FastHTTP server with Deployment informer and leader election
 make server
 
 # List Kubernetes deployments
@@ -127,6 +131,12 @@ make list-namespace
 # Start server with multiple namespaces via environment variable
 export NAMESPACE=kube-system,monitoring && make server
 
+# Start server with custom leader election namespace
+make server LEADER_ELECTION_NAMESPACE=kube-system
+
+# Disable leader election for development
+make server ENABLE_LEADER_ELECTION=false
+
 # Test controller-runtime Deployment controller
 make test-ctrl
 
@@ -137,11 +147,11 @@ make dev-server
 make prod
 
 # Build multi-arch Docker image (amd64, arm64)
-make docker-build-multi VERSION=0.1.1
+make docker-build-multi VERSION=0.1.3
 
 # Build and package Helm chart
-make build-linux VERSION=0.1.1
-helm package charts/app --version 0.1.1 --app-version 0.1.1
+make build-linux VERSION=0.1.3
+helm package charts/app --version 0.1.3 --app-version 0.1.3
 ```
 
 ### Manual Build
@@ -159,27 +169,30 @@ make docker-build
 
 ## Commands
 
-### FastHTTP Server with Deployment Informer
+### FastHTTP Server with Deployment Informer and Controller
 
-The main feature of this application is a high-performance FastHTTP server that can optionally run a Deployment informer to monitor Kubernetes events in real-time.
+The main feature of this application is a high-performance FastHTTP server that runs a Deployment informer and controller-runtime manager with leader election support for high availability.
 
 #### Basic Usage
 
 ```bash
-# Development mode with informer
+# Development mode with informer and leader election
 go run main.go server --kubeconfig ~/.kube/config
 
-# With custom configuration
-go run main.go server --port 9090 --metric-port 9091 --log-level debug --kubeconfig ~/.kube/config --namespace kube-system
+# With custom configuration and leader election
+go run main.go server --port 9090 --metric-port 9091 --log-level debug --kubeconfig ~/.kube/config --namespace kube-system --enable-leader-election --leader-election-namespace kube-system
 
-# Using in-cluster configuration
-go run main.go server --in-cluster --namespace kube-system
+# Using in-cluster configuration with leader election
+go run main.go server --in-cluster --namespace kube-system --enable-leader-election
 
-# Multiple namespaces (comma-separated)
-go run main.go server --namespace kube-system,monitoring,default
+# Multiple namespaces with leader election
+go run main.go server --namespace kube-system,monitoring --enable-leader-election --leader-election-namespace kube-system
+
+# Disable leader election for development
+go run main.go server --enable-leader-election=false
 
 # Using environment variable for multiple namespaces
-export NAMESPACE=kube-system,monitoring,default
+export NAMESPACE=kube-system,monitoring
 go run main.go server
 
 # List deployments
@@ -196,7 +209,7 @@ export NAMESPACE=kube-system,test
 go run main.go list
 
 # Server with environment variables
-export PORT=9090 && export METRIC_PORT=9091 && export LOGGING_LEVEL=debug && go run main.go server
+export PORT=9090 && export METRIC_PORT=9091 && export LOGGING_LEVEL=debug && export ENABLE_LEADER_ELECTION=true && go run main.go server
 
 # List with environment variables
 export KUBECONFIG=~/.kube/config-prod && export NAMESPACE=monitoring && go run main.go list
@@ -206,18 +219,21 @@ export KUBECONFIG=~/.kube/config-prod && export NAMESPACE=monitoring && go run m
 
 - Starts a FastHTTP server on the specified port (default: 8080)
 - Starts a controller-runtime manager with Deployment controller on the specified metrics port (default: 8081)
+- Enables leader election using Lease resources for high availability (enabled by default)
 - Provides JSON API endpoints for deployment information:
   - `/` - Root endpoint with version information
   - `/namespaces` - List all watched namespaces
   - `/deployments` - List deployments from all watched namespaces
   - `/deployments/{namespace}` - List deployments in specific namespace
 - Provides Prometheus metrics endpoint at `:8081/metrics` for controller monitoring
+- Implements graceful shutdown with proper signal handling for both HTTP server and controller manager
+- Provides health checks that consider leader election status
 
 #### API Examples
 
 ```bash
-# Start server with multiple namespaces
-./k8s-controller server --kubeconfig ~/.kube/config --port 8080 --metric-port 8081 -n kube-system,monitoring
+# Start server with multiple namespaces and leader election
+./k8s-controller server --kubeconfig ~/.kube/config --port 8080 --metric-port 8081 -n kube-system,monitoring --enable-leader-election --leader-election-namespace kube-system
 
 # Get all watched namespaces
 curl -s http://localhost:8080/namespaces
@@ -250,16 +266,42 @@ curl -s http://localhost:8080/deployments/kube-system
 
 # Get root endpoint with version info
 curl -s http://localhost:8080/
-# Output: {"endpoints":{"deployments":"/deployments","namespaces":"/namespaces"},"message":"Kubernetes Controller API","version":"v0.1.2"}
+# Output: {"endpoints":{"deployments":"/deployments","namespaces":"/namespaces"},"message":"Kubernetes Controller API","version":"v0.1.3"}
+
+# Get Prometheus metrics
+curl -s http://localhost:8081/metrics
+# Output: Prometheus metrics for controller monitoring
 ```
 
 **Note:** The `/deployments` endpoint returns deployments from all namespaces being watched by the informer, not just the default namespace. This provides a comprehensive view of all deployments across monitored namespaces.
-- **Deployment Informer**: Watches for Deployment events (add, update, delete) in the specified namespace(s)
-- **Controller-runtime Deployment Controller**: Provides production-grade reconciliation loops for Deployments with proper error handling and retry logic
-- Uses structured logging with configurable levels (zerolog integration for both FastHTTP server and controller-runtime)
-- Supports hot-reload configuration via environment variables
-- Implements graceful shutdown with proper signal handling
-- Provides Prometheus metrics for monitoring controller performance
+
+### Leader Election and High Availability
+
+The controller supports leader election for high availability deployments:
+
+- **Leader Election**: Uses Kubernetes Lease resources for distributed leader election
+- **Active-Passive**: Only the leader processes reconciliation events
+- **Graceful Failover**: Automatic failover when the leader becomes unavailable
+- **Configurable Namespace**: Leader election namespace can be configured separately from watched namespaces
+- **Health Checks**: Health endpoints consider leader election status
+
+#### Leader Election Configuration
+
+```bash
+# Enable leader election (default)
+./k8s-controller server --enable-leader-election
+
+# Disable leader election for development
+./k8s-controller server --enable-leader-election=false
+
+# Custom leader election namespace
+./k8s-controller server --enable-leader-election --leader-election-namespace kube-system
+
+# Using environment variables
+export ENABLE_LEADER_ELECTION=true
+export LEADER_ELECTION_NAMESPACE=kube-system
+./k8s-controller server
+```
 
 ### Controller-runtime Deployment Controller
 
@@ -269,7 +311,8 @@ The project includes a production-grade Kubernetes controller built using the [c
 - **Namespace Filtering**: Controller only processes Deployments in specified namespaces
 - **Structured Logging**: Integration with zerolog for consistent logging across the application
 - **Metrics**: Prometheus metrics endpoint for monitoring controller performance
-- **Leader Election**: Support for high availability deployments (future enhancement)
+- **Leader Election**: Support for high availability deployments using Lease resources
+- **Graceful Shutdown**: Proper cleanup when the controller stops
 
 #### Controller Features
 
@@ -278,6 +321,7 @@ The project includes a production-grade Kubernetes controller built using the [c
 - **Resource Validation**: Validates Deployment specifications
 - **Metrics Collection**: Tracks reconciliation duration, success/failure rates
 - **Graceful Shutdown**: Proper cleanup when the controller stops
+- **Leader Election**: Distributed leader election for high availability
 
 #### Testing the Controller
 
@@ -425,8 +469,8 @@ make help
 
 **Variable Override:** You can override any Makefile variable:
 ```bash
-# Override default values
-make server SERVER_PORT=9090 METRIC_PORT=9091 LOGGING_LEVEL=debug NAMESPACE=kube-system,monitoring
+# Override default values with leader election
+make server SERVER_PORT=9090 METRIC_PORT=9091 LOGGING_LEVEL=debug NAMESPACE=kube-system,monitoring ENABLE_LEADER_ELECTION=true LEADER_ELECTION_NAMESPACE=kube-system
 
 # Cross-compilation
 make build TARGETOS=linux TARGETARCH=amd64
@@ -441,6 +485,8 @@ export SERVER_PORT=9090
 export METRIC_PORT=9091
 export LOGGING_LEVEL=debug
 export KUBECONFIG=~/.kube/config-prod
+export ENABLE_LEADER_ELECTION=true
+export LEADER_ELECTION_NAMESPACE=kube-system
 make server
 ```
 
@@ -448,7 +494,7 @@ make server
 
 ## Deployment Examples
 
-This section provides examples of how to deploy the controller in different environments. Note that this is a development/experimental project and should not be used in production environments without proper testing and validation.
+This section provides examples of how to deploy the controller in different environments. **Note: This is a development/experimental project and should not be used in production environments.**
 
 ### Using Docker
 
@@ -456,7 +502,7 @@ This section provides examples of how to deploy the controller in different envi
 # Pull the latest image
 docker pull ghcr.io/vanelin/k8s-controller:latest
 
-# Run with custom configuration
+# Run with custom configuration and leader election
 docker run --rm \
   --name k8s-controller \
   -v ~/.kube:/root/.kube:ro \
@@ -465,6 +511,8 @@ docker run --rm \
   -e LOGGING_LEVEL=debug \
   -e NAMESPACE=kube-system,monitoring,default \
   -e METRIC_PORT=8081 \
+  -e ENABLE_LEADER_ELECTION=true \
+  -e LEADER_ELECTION_NAMESPACE=kube-system \
   -p 8080:8080 \
   -p 8081:8081 \
   ghcr.io/vanelin/k8s-controller:latest server
@@ -494,7 +542,9 @@ helm upgrade --install k8s-controller ./k8s-controller-helm-chart.tgz \
   --set server.metricPort=9091 \
   --set server.logLevel=info \
   --set server.namespace=monitoring \
-  --set server.inCluster=true
+  --set server.inCluster=true \
+  --set server.enableLeaderElection=true \
+  --set server.leaderElectionNamespace=kube-system
 ```
 
 ## Getting Help
@@ -542,6 +592,18 @@ sudo netstat -tulpn | grep :8080
 
 # Use in-cluster config if running inside Kubernetes
 ./k8s-controller server --in-cluster
+```
+
+#### Leader Election Issues
+```bash
+# Check leader election Lease resources
+kubectl get leases -n kube-system | grep k8s-controller
+
+# Check leader election logs
+kubectl logs -f deployment/k8s-controller -n k8s-controller
+
+# Disable leader election for debugging
+./k8s-controller server --enable-leader-election=false
 ```
 
 #### Build Issues

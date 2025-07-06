@@ -3,6 +3,8 @@ package cmd
 import (
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestServerCommandDefined(t *testing.T) {
@@ -211,4 +213,16 @@ func TestServerConfigurationPriorityLogic(t *testing.T) {
 	// Test that the logic in server.go would handle this correctly
 	// The server should prioritize IN_CLUSTER=true over KUBECONFIG
 	t.Log("Environment variables set successfully. Server should use in-cluster config when IN_CLUSTER=true")
+}
+
+func TestServerCmd_LeaderElectionConfig(t *testing.T) {
+	// Test that leader election flag is properly configured
+	cmd := serverCmd
+
+	// Check that the flag exists
+	flag := cmd.Flags().Lookup("enable-leader-election")
+	require.NotNil(t, flag, "enable-leader-election flag should exist")
+	require.Equal(t, "enable-leader-election", flag.Name)
+	require.Equal(t, "Enable leader election for controller manager", flag.Usage)
+	require.Equal(t, "true", flag.DefValue, "Default value should be true")
 }

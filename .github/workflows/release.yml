@@ -22,6 +22,8 @@ jobs:
       KUBECONFIG: ~/.kube/config
       NAMESPACE: default
       IN_CLUSTER: false
+      ENABLE_LEADER_ELECTION: true
+      LEADER_ELECTION_NAMESPACE: default
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -155,6 +157,8 @@ jobs:
             KUBECONFIG=${{ env.KUBECONFIG }}
             NAMESPACE=${{ env.NAMESPACE }}
             IN_CLUSTER=${{ env.IN_CLUSTER }}
+            ENABLE_LEADER_ELECTION=${{ env.ENABLE_LEADER_ELECTION }}
+            LEADER_ELECTION_NAMESPACE=${{ env.LEADER_ELECTION_NAMESPACE }}
 
       - name: Extract changelog for this version
         id: changelog
