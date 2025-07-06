@@ -116,8 +116,13 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'false'
         run: |
           echo "::group::Fixing go-build-cache permissions"
-          sudo chown -R $(id -u):$(id -g) go-build-cache
-          sudo chmod -R u+rwX,go+rX go-build-cache
+          if [ -d "go-build-cache" ]; then
+            sudo chown -R $(id -u):$(id -g) go-build-cache
+            sudo chmod -R u+rwX,go+rX go-build-cache
+            echo "Cache permissions fixed successfully"
+          else
+            echo "go-build-cache directory does not exist - skipping permissions fix"
+          fi
           echo "::endgroup::"
 
       - name: Inject go-build-cache
