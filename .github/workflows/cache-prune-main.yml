@@ -1,10 +1,20 @@
-name: Prune caches on main (keep the newest)
+name: Smart cache cleanup for main branch - optimized
 on:
   workflow_run:
     workflows: ["CI"]
     branches: [main]
     types: [completed]
   workflow_dispatch:
+    inputs:
+      cleanup_mode:
+        description: 'Main branch cleanup mode'
+        required: true
+        default: 'keep_last'
+        type: choice
+        options:
+          - keep_last
+          - keep_last_10
+          - flush_all
 
 jobs:
   prune-main:
@@ -14,51 +24,118 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       actions: write
+      contents: read
     steps:
-      - name: Keep latest cache per key prefix, delete the rest
+      - name: Optimized main branch cache cleanup
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           REF: refs/heads/main
-          PREFIXES: "setup-go- Linux-go-build-cache- cache-trivy- trivy-binary- index-buildkit- buildkit-blob- buildx-dl-bin- docker.io--tonistiigi--binfmt-"
+          CLEANUP_MODE: ${{ github.event.inputs.cleanup_mode || 'keep_last' }}
         run: |
-          set +e  # Don't fail workflow on individual cache deletion errors
+          set +e
           
-          total_deleted=0
+          echo "::group::Cache cleanup configuration"
           
-          for prefix in $PREFIXES; do
-            echo "::group::Processing prefix: $prefix"
-            
-            # Use --key to filter by prefix, sort by lastAccessedAt, keep newest (last), delete the rest
-            cache_ids=$(gh cache list --ref "$REF" --limit 50 --key "$prefix" \
-              --json id,key,lastAccessedAt \
-              --jq 'sort_by(.lastAccessedAt) | .[0:-1] | .[].id')
-            
-            if [ -z "$cache_ids" ]; then
-              echo "No old caches found with prefix: $prefix"
-            else
-              echo "Found old caches to delete:"
-              prefix_deleted=0
-              
-              echo "$cache_ids" | while read -r cache_id; do
-                if [ -n "$cache_id" ]; then
-                  echo "Deleting cache: $cache_id"
-                  if gh cache delete "$cache_id"; then
-                    ((prefix_deleted++))
-                    ((total_deleted++))
-                  fi
-                fi
-              done
-              
-              echo "Deleted $prefix_deleted caches with prefix: $prefix"
-            fi
-            
-            echo "::endgroup::"
-          done
+          # Determine how many caches to keep based on mode
+          case "$CLEANUP_MODE" in
+            "keep_last")
+              keep_count=1
+              echo "Mode: Keep only the newest cache"
+              ;;
+            "keep_last_10")
+              keep_count=10
+              echo "Mode: Keep 10 newest caches"
+              ;;
+            "flush_all")
+              keep_count=0
+              echo "Mode: Delete ALL caches"
+              ;;
+            *)
+              keep_count=1
+              echo "Unknown mode, defaulting to keep_last"
+              ;;
+          esac
           
-          echo "Main branch cache cleanup completed"
-          echo "Total old caches deleted: $total_deleted"
+          echo "Will keep $keep_count newest cache(s)"
+          echo "::endgroup::"
           
-          if [ $total_deleted -gt 0 ]; then
-            echo "::notice::Deleted $total_deleted old caches from main branch"
+          echo "::group::Analyzing current caches"
+          
+          # Get total count first
+          total_caches=$(gh cache list --ref "$REF" --limit 2000 --json id --jq '. | length')
+          echo "Total caches in main branch: $total_caches"
+          
+          if [ "$total_caches" -eq 0 ]; then
+            echo "No caches found in main branch"
+            exit 0
           fi
+          
+          # Show what we'll keep (for logging)
+          if [[ "$keep_count" -gt 0 ]]; then
+            echo "Caches that will be KEPT:"
+            gh cache list --ref "$REF" --limit "$keep_count" \
+              --sort last_accessed_at --order desc \
+              --json key,lastAccessedAt,size \
+              --jq '.[] | "  \(.key) (accessed: \(.lastAccessedAt), size: \(.size // "unknown"))"'
+            echo ""
+          fi
+          
+          echo "::endgroup::"
+          
+          echo "::group::Deleting old caches"
+          
+          # Get cache IDs to delete
+          if [[ "$keep_count" -eq 0 ]]; then
+            # Delete all caches
+            cache_ids=$(gh cache list --ref "$REF" --limit 2000 --json id --jq '.[].id')
+          else
+            # Keep newest, delete rest - use proper sorting
+            cache_ids=$(gh cache list --ref "$REF" --limit 2000 \
+              --sort last_accessed_at --order desc \
+              --json id \
+              --jq --argjson keep "$keep_count" '.[$keep:] | .[].id')
+          fi
+          
+          if [ -z "$cache_ids" ]; then
+            echo "No caches to delete"
+            deleted_count=0
+          else
+            echo "Deleting old caches..."
+            
+            # Convert to array and process
+            deleted_count=0
+            while IFS= read -r cache_id; do
+              if [ -n "$cache_id" ]; then
+                echo "Deleting cache: $cache_id"
+                if gh cache delete "$cache_id"; then
+                  ((deleted_count++))
+                else
+                  echo "Failed to delete cache: $cache_id"
+                fi
+              fi
+            done <<< "$cache_ids"
+            
+            echo "Successfully deleted $deleted_count caches"
+          fi
+          
+          echo "::endgroup::"
+          
+          remaining_caches=$((total_caches - deleted_count))
+          
+          echo "Cache cleanup summary:"
+          echo "  Mode: $CLEANUP_MODE"
+          echo "  Total caches before: $total_caches"
+          echo "  Caches deleted: $deleted_count"
+          echo "  Caches remaining: $remaining_caches"
+          echo "  Target keep count: $keep_count"
+          
+          if [ "$deleted_count" -gt 0 ]; then
+            echo "::notice::Successfully deleted $deleted_count old caches from main branch (mode: $CLEANUP_MODE)"
+          else
+            echo "::notice::No old caches found to delete in main branch"
+          fi
+          
+          # Verify final state
+          final_count=$(gh cache list --ref "$REF" --limit 100 --json id --jq '. | length')
+          echo "Verification: $final_count cache(s) remaining in main branch"
