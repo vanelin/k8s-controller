@@ -89,7 +89,7 @@ $(ENVTEST): $(LOCALBIN)
 # Build flags
 BUILD_FLAGS = -v -o $(APP) -ldflags "-X github.com/vanelin/$(APP)/cmd.appVersion=$(APP_VERSION)"
 
-.PHONY: all build build-linux clean test test-coverage format fmt get lint server list list-namespace test-informer test-ctrl check-env dev-server dev docker-build docker-build-multi docker-clean clean-all push help vulncheck version-info envtest
+.PHONY: all build build-linux clean test test-coverage test-informer test-ctrl test-config format fmt get lint server list list-namespace check-env dev-server dev prod docker-build docker-build-multi docker-clean clean-all push help vulncheck version-info envtest
 
 # Default target
 all: clean build
@@ -350,26 +350,28 @@ help:
 	@echo "Test commands:"
 	@echo "  test           - Run all tests with envtest (unit + Kubernetes integration)"
 	@echo "  test-coverage  - Run all tests with coverage report and XML output"
-	@echo "  test-informer  - Test Deployment informer with envtest (interactive)"
+	@echo "  test-informer  - Test Deployment informer with envtest"
 	@echo "  test-ctrl      - Test Deployment controller with envtest"
+	@echo "  test-config    - Test configuration package with envtest"
 	@echo "  envtest        - Download setup-envtest tool for Kubernetes testing"
 	@echo ""
 	@echo "Dependency commands:"
-	@echo "  get            - Get dependencies"
-	@echo "  format         - Format code"
+	@echo "  get            - Get dependencies (download, tidy, verify)"
+	@echo "  format         - Format code with goimports"
 	@echo "  fmt            - Alias for format"
-	@echo "  lint           - Lint code"
+	@echo "  lint           - Lint code with golangci-lint"
 	@echo "  vulncheck      - Check for vulnerabilities in dependencies"
 	@echo ""
 	@echo "Server commands (with Deployment Informer):"
 	@echo "  server         - Build and start FastHTTP server with Deployment informer"
+	@echo "                   (includes leader election and metrics)"
 	@echo ""
 	@echo "List commands:"
 	@echo "  list           - List Kubernetes deployments"
-	@echo "  list-namespace - List Kubernetes deployments in custom namespace"
+	@echo "  list-namespace - List Kubernetes deployments in custom namespace (interactive)"
 	@echo ""
 	@echo "Development commands:"
-	@echo "  check-env      - Check/create .env file"
+	@echo "  check-env      - Check/create .env file with default configuration"
 	@echo "  dev            - Development workflow (check-env, get, format, lint, test, build)"
 	@echo "  dev-server     - Server development workflow (check-env, get, format, lint, test, server)"
 	@echo "  prod           - Release build (clean, get, test, build)"
