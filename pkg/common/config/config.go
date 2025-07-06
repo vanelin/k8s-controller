@@ -10,12 +10,14 @@ import (
 
 // Config holds all configuration for the application
 type Config struct {
-	Port         string `mapstructure:"PORT"`
-	KUBECONFIG   string `mapstructure:"KUBECONFIG"`
-	LoggingLevel string `mapstructure:"LOGGING_LEVEL"`
-	Namespace    string `mapstructure:"NAMESPACE"`
-	InCluster    bool   `mapstructure:"IN_CLUSTER"`
-	MetricPort   string `mapstructure:"METRIC_PORT"`
+	Port                    string `mapstructure:"PORT"`
+	KUBECONFIG              string `mapstructure:"KUBECONFIG"`
+	LoggingLevel            string `mapstructure:"LOGGING_LEVEL"`
+	Namespace               string `mapstructure:"NAMESPACE"`
+	InCluster               bool   `mapstructure:"IN_CLUSTER"`
+	MetricPort              string `mapstructure:"METRIC_PORT"`
+	EnableLeaderElection    bool   `mapstructure:"ENABLE_LEADER_ELECTION"`
+	LeaderElectionNamespace string `mapstructure:"LEADER_ELECTION_NAMESPACE"`
 }
 
 // LoadConfig reads configuration from file or environment variables
@@ -42,6 +44,12 @@ func LoadConfig(path string) (config Config, err error) {
 	}
 	if err := viper.BindEnv("METRIC_PORT"); err != nil {
 		return config, fmt.Errorf("failed to bind METRIC_PORT env var: %w", err)
+	}
+	if err := viper.BindEnv("ENABLE_LEADER_ELECTION"); err != nil {
+		return config, fmt.Errorf("failed to bind ENABLE_LEADER_ELECTION env var: %w", err)
+	}
+	if err := viper.BindEnv("LEADER_ELECTION_NAMESPACE"); err != nil {
+		return config, fmt.Errorf("failed to bind LEADER_ELECTION_NAMESPACE env var: %w", err)
 	}
 
 	// Enable automatic environment variable reading
@@ -83,6 +91,14 @@ func (c *Config) setDefaults() {
 	if c.MetricPort == "" {
 		c.MetricPort = "8081"
 	}
+	// Only set EnableLeaderElection default if it wasn't set via viper
+	// This allows the test to work correctly when viper is not used
+	if !viper.IsSet("ENABLE_LEADER_ELECTION") {
+		c.EnableLeaderElection = true
+	}
+	if c.LeaderElectionNamespace == "" {
+		c.LeaderElectionNamespace = "default"
+	}
 	// InCluster defaults to false, no need to set it
 }
 
@@ -118,4 +134,6 @@ func (c *Config) PrintConfig() {
 	}
 	fmt.Printf("  NAMESPACE: %s\n", c.Namespace)
 	fmt.Printf("  IN_CLUSTER: %t\n", c.InCluster)
+	fmt.Printf("  ENABLE_LEADER_ELECTION: %t\n", c.EnableLeaderElection)
+	fmt.Printf("  LEADER_ELECTION_NAMESPACE: %s\n", c.LeaderElectionNamespace)
 }

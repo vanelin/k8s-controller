@@ -18,6 +18,8 @@ LOGGING_LEVEL ?=debug
 KUBECONFIG ?=~/.kube/config
 IN_CLUSTER ?=false
 NAMESPACE ?=default
+ENABLE_LEADER_ELECTION ?=true
+LEADER_ELECTION_NAMESPACE ?=default
 
 # Detect system architecture
 ARCH := $(shell uname -m)
@@ -165,6 +167,12 @@ test-ctrl: envtest
 	@echo "Using KUBEBUILDER_ASSETS: $(shell $(ENVTEST) use --arch $(TARGETARCH) --bin-dir $(LOCALBIN) -p path)"
 	USE_EXISTING_CLUSTER=$(USE_EXISTING_CLUSTER) KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use --arch $(TARGETARCH) --bin-dir $(LOCALBIN) -p path)" go test ./pkg/ctrl -v
 
+# Test config with envtest
+test-config: envtest
+	@echo "Testing config with envtest..."
+	@echo "Using KUBEBUILDER_ASSETS: $(shell $(ENVTEST) use --arch $(TARGETARCH) --bin-dir $(LOCALBIN) -p path)"
+	USE_EXISTING_CLUSTER=$(USE_EXISTING_CLUSTER) KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use --arch $(TARGETARCH) --bin-dir $(LOCALBIN) -p path)" go test ./pkg/common/config -v
+
 # Run all tests with coverage
 test-coverage: envtest
 	@echo "Running all tests with coverage..."
@@ -174,10 +182,17 @@ test-coverage: envtest
 	go tool cover -func=coverage.out
 	gocover-cobertura < coverage.out > coverage.xml
 
-# Run server command with Deployment informer
+# Run server command with Deployment controller and informer and leader election enabled
 server: build
 	@echo "Starting FastHTTP server with Deployment informer..."
-	./$(BINARY_NAME) server --kubeconfig $(KUBECONFIG) --namespace $(NAMESPACE)
+	./$(BINARY_NAME) server \
+		--kubeconfig $(KUBECONFIG) \
+		--namespace $(NAMESPACE) \
+		--enable-leader-election $(ENABLE_LEADER_ELECTION) \
+		--leader-election-namespace $(LEADER_ELECTION_NAMESPACE) \
+		--metric-port $(METRIC_PORT) \
+		--port $(SERVER_PORT) \
+		--log-level $(LOGGING_LEVEL)
 
 # Run list command
 list: build
@@ -199,6 +214,8 @@ check-env:
 		echo "PORT=$(SERVER_PORT)" >> $(CONFIG_PATH); \
 		echo "LOGGING_LEVEL=$(LOGGING_LEVEL)" >> $(CONFIG_PATH); \
 		echo "METRIC_PORT=$(METRIC_PORT)" >> $(CONFIG_PATH); \
+		echo "ENABLE_LEADER_ELECTION=true" >> $(CONFIG_PATH); \
+		echo "LEADER_ELECTION_NAMESPACE=$(LEADER_ELECTION_NAMESPACE)" >> $(CONFIG_PATH); \
 		echo "" >> $(CONFIG_PATH); \
 		echo "# Kubernetes Configuration" >> $(CONFIG_PATH); \
 		echo "NAMESPACE=$(NAMESPACE)" >> $(CONFIG_PATH); \
@@ -256,6 +273,8 @@ docker-build:
 		--build-arg KUBECONFIG=$(KUBECONFIG) \
 		--build-arg IN_CLUSTER=$(IN_CLUSTER) \
 		--build-arg METRIC_PORT=$(METRIC_PORT) \
+		--build-arg ENABLE_LEADER_ELECTION=$(ENABLE_LEADER_ELECTION) \
+		--build-arg LEADER_ELECTION_NAMESPACE=$(LEADER_ELECTION_NAMESPACE) \
 		--load \
 		-t $(REGISTRY)/$(REPOSITORY)/$(APP):$(DOCKER_TAG)-$(TARGETOS)-$(TARGETARCH) \
 		-t $(REGISTRY)/$(REPOSITORY)/$(APP):latest-$(TARGETOS)-$(TARGETARCH) \
@@ -274,6 +293,8 @@ docker-build-multi:
 		--build-arg KUBECONFIG=$(KUBECONFIG) \
 		--build-arg IN_CLUSTER=$(IN_CLUSTER) \
 		--build-arg METRIC_PORT=$(METRIC_PORT) \
+		--build-arg ENABLE_LEADER_ELECTION=$(ENABLE_LEADER_ELECTION) \
+		--build-arg LEADER_ELECTION_NAMESPACE=$(LEADER_ELECTION_NAMESPACE) \
 		--provenance=false \
 		--push \
 		-t $(REGISTRY)/$(REPOSITORY)/$(APP):$(DOCKER_TAG) \

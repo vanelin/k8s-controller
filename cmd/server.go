@@ -29,6 +29,8 @@ var serverKubeconfig string
 var serverInCluster bool
 var serverNamespace string
 var serverMetricPort string
+var serverEnableLeaderElection bool
+var serverLeaderElectionNamespace string
 
 var serverCmd = &cobra.Command{
 	Use:   "server",
@@ -54,6 +56,14 @@ var serverCmd = &cobra.Command{
 		if serverMetricPort != "" {
 			cfg.MetricPort = serverMetricPort
 		}
+		// Handle leader election flag - CLI flag takes precedence over config
+		if cmd.Flags().Changed("enable-leader-election") {
+			cfg.EnableLeaderElection = serverEnableLeaderElection
+		}
+		// Handle leader election namespace flag - CLI flag takes precedence over config
+		if serverLeaderElectionNamespace != "" {
+			cfg.LeaderElectionNamespace = serverLeaderElectionNamespace
+		}
 
 		// Parse namespaces to watch from --namespace (comma-separated)
 		namespacesToWatch := []string{"default"}
@@ -77,6 +87,12 @@ var serverCmd = &cobra.Command{
 
 		// Print updated configuration
 		cfg.PrintConfig()
+
+		// Print additional controller-specific configuration
+		log.Info().
+			Str("metrics_port", cfg.MetricPort).
+			Bool("leader_election", cfg.EnableLeaderElection).
+			Msg("Controller configuration")
 
 		// Start Deployment informer if Kubernetes flags are provided
 		// Priority: CLI flags > env vars > .env file > defaults
@@ -132,12 +148,38 @@ var serverCmd = &cobra.Command{
 			// Use zerologr for controller-runtime
 			ctrlLogger := zerologr.New(&log.Logger)
 			ctrlruntime.SetLogger(ctrlLogger)
-			mgr, err := ctrlruntime.NewManager(ctrlruntime.GetConfigOrDie(), manager.Options{
+
+			// Configure manager options with leader election
+			managerOpts := manager.Options{
 				Logger: ctrlLogger,
 				Metrics: metricsserver.Options{
 					BindAddress: ":" + metricPort,
 				},
-			})
+			}
+
+			// Configure leader election if enabled
+			if cfg.EnableLeaderElection {
+				// Use configured leader election namespace
+				leaderElectionNamespace := cfg.LeaderElectionNamespace
+				if leaderElectionNamespace == "" {
+					leaderElectionNamespace = "default"
+				}
+
+				managerOpts.LeaderElection = true
+				managerOpts.LeaderElectionNamespace = leaderElectionNamespace
+				managerOpts.LeaderElectionID = "k8s-controller-leader-election"
+				managerOpts.LeaderElectionResourceLock = "leases"
+
+				log.Info().
+					Str("namespace", leaderElectionNamespace).
+					Str("resource_lock", "leases").
+					Strs("watched_namespaces", namespacesToWatch).
+					Msg("Leader election enabled")
+			} else {
+				log.Info().Msg("Leader election disabled")
+			}
+
+			mgr, err := ctrlruntime.NewManager(ctrlruntime.GetConfigOrDie(), managerOpts)
 			if err != nil {
 				log.Error().Err(err).Msg("Failed to create controller-runtime manager")
 				os.Exit(1)
@@ -232,4 +274,6 @@ func init() {
 	serverCmd.Flags().BoolVar(&serverInCluster, "in-cluster", false, "Use in-cluster Kubernetes config (default: false)")
 	serverCmd.Flags().StringVarP(&serverNamespace, "namespace", "n", "", "Namespace(s) to watch for Deployments (comma-separated, default: default)")
 	serverCmd.Flags().StringVar(&serverMetricPort, "metric-port", "", "Port to run the controller-runtime metrics server on (overrides env vars and config, default: 8081)")
+	serverCmd.Flags().BoolVar(&serverEnableLeaderElection, "enable-leader-election", true, "Enable leader election for controller manager")
+	serverCmd.Flags().StringVar(&serverLeaderElectionNamespace, "leader-election-namespace", "", "Namespace for leader election (overrides env vars and config, default: default)")
 }
